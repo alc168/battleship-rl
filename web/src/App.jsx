@@ -17,7 +17,7 @@ import {
   updatePlacementMemory,
   mergeWeightDelta
 } from './utils.js';
-import { API_BASE_URL, TRAINING_MODE } from './config.js';
+import { API_BASE_URL, API_KEY, TRAINING_MODE } from './config.js';
 import { CONFIG } from './training.config.js';
 import './index.css';
 
@@ -166,7 +166,7 @@ function App() {
     // Record result asynchronously; do not block UI
     fetch(`${API_BASE_URL}/api/record`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...(API_KEY && { 'X-API-Key': API_KEY }) },
       body: JSON.stringify({ layout_json: layoutJson, win: humanWon })
     }).catch(err => console.error('Failed to record layout:', err));
 
@@ -194,7 +194,7 @@ function App() {
           setWeightMap(merged);
           fetch(`${API_BASE_URL}/api/merge-weights`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', ...(API_KEY && { 'X-API-Key': API_KEY }) },
             body: JSON.stringify({ delta })
           })
             .then(response => response.json())

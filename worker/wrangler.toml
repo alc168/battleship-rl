@@ -9,12 +9,17 @@
 # 3. Copy the ids from the output into the bindings below.
 # 4. Create the table (run against the live Cloudflare D1 database):
 #      wrangler d1 execute battleship-rl-db --remote --file=./schema.sql
-# 5. Deploy:
+# 5. Set the shared API key (run once, or rotate later):
+#      wrangler secret put API_KEY
+# 6. Deploy:
 #      wrangler deploy
 
 name = "battleship-rl-api"
 main = "index.js"
 compatibility_date = "2025-07-01"
+
+[vars]
+ALLOWED_ORIGINS = "https://alc168.github.io,http://localhost:5173"
 
 [[d1_databases]]
 binding = "DB"

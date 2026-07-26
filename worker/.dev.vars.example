@@ -1,0 +1,4 @@
+# Copy this file to .dev.vars and set your local API key.
+# This key is only used for local wrangler dev and must match VITE_API_KEY in web/.env.
+API_KEY=dev-key
+ALLOWED_ORIGINS=http://localhost:5173,http://localhost:8787
