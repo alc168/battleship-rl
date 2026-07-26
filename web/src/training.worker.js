@@ -6,11 +6,25 @@ import {
   checkSunkShips,
   getBoardKey,
   getAiMove,
-  getRandomPosition,
   applyPlacementPattern,
   getTopPlacementPatterns
 } from './utils.js';
+import { GRID_SIZE } from './constants.js';
 import { CONFIG } from './training.config.js';
+
+const MAX_MOVES_PER_GAME = 200;
+
+function getUnattackedMove(moves) {
+  const used = new Set(moves.map(m => `${m.row},${m.col}`));
+  const available = [];
+  for (let r = 0; r < GRID_SIZE; r++) {
+    for (let c = 0; c < GRID_SIZE; c++) {
+      if (!used.has(`${r},${c}`)) available.push({ row: r, col: c });
+    }
+  }
+  if (available.length === 0) return null;
+  return available[Math.floor(Math.random() * available.length)];
+}
 
 function selectPattern(placementMemory) {
   if (!placementMemory || placementMemory.length === 0) return null;
@@ -46,16 +60,27 @@ function buildDelta(games, weightMap, placementMemory) {
     const opponentMoves = [];
     const trace = [];
     let shooterWon = false;
+    let moveCount = 0;
 
     while (true) {
+      if (++moveCount > MAX_MOVES_PER_GAME) {
+        console.warn('Game', g, 'hit move limit; aborting as draw');
+        shooterWon = false;
+        break;
+      }
+
       const opponentSunkShips = checkSunkShips(opponentShips, shooterMoves);
       const boardKey = getBoardKey(shooterMoves, opponentShips, opponentSunkShips);
       let action = getAiMove(boardKey, weightMap, shooterMoves);
 
       if (!action) {
-        do {
-          action = getRandomPosition();
-        } while (shooterMoves.some(m => m.row === action.row && m.col === action.col));
+        action = getUnattackedMove(shooterMoves);
+      }
+
+      if (!action) {
+        console.warn('Game', g, 'no unattacked cells left for shooter');
+        shooterWon = false;
+        break;
       }
 
       trace.push({ boardKey, row: action.row, col: action.col });
@@ -67,10 +92,12 @@ function buildDelta(games, weightMap, placementMemory) {
         break;
       }
 
-      let oppAction;
-      do {
-        oppAction = getRandomPosition();
-      } while (opponentMoves.some(m => m.row === oppAction.row && m.col === oppAction.col));
+      let oppAction = getUnattackedMove(opponentMoves);
+      if (!oppAction) {
+        console.warn('Game', g, 'no unattacked cells left for opponent');
+        shooterWon = true;
+        break;
+      }
       const oppRes = processAttack(shooterGrid, oppAction.row, oppAction.col);
       opponentMoves.push({ row: oppAction.row, col: oppAction.col, hit: oppRes.hit });
 
