@@ -151,7 +151,7 @@ function App() {
 
   // Voiceover pacing for Cheeky and Philosophical personalities
   const computerTurnCountRef = useRef(0);
-  const turnsSinceCheekyVoiceoverRef = useRef(0);
+  const nextVoiceoverTurnRef = useRef(null);
 
   // Tactical console: info panel, logs, and last computer decision
   // Tactical console is open by default on all viewports
@@ -741,17 +741,17 @@ function App() {
 
     // Personality-driven voiceovers
     computerTurnCountRef.current += 1;
-    if (humorLevel === 2) {
-      // Cheeky: random but at least once every 5 computer turns
-      turnsSinceCheekyVoiceoverRef.current += 1;
-      if (turnsSinceCheekyVoiceoverRef.current >= 5 || Math.random() < 0.2) {
-        playVoiceover();
-        turnsSinceCheekyVoiceoverRef.current = 0;
+    if (humorLevel >= 2) {
+      // Cheeky: at least once every 20 turns, at a random turn at least 10 after the last play.
+      // Philosophical: at least once every 15 turns, at a random turn at least 5 after the last play.
+      const minGap = humorLevel === 2 ? 10 : 5;
+      const window = 11; // random spread so the next play is within the desired interval
+      if (nextVoiceoverTurnRef.current === null) {
+        nextVoiceoverTurnRef.current = minGap + Math.floor(Math.random() * window);
       }
-    } else if (humorLevel === 3) {
-      // Philosophical: every two computer turns
-      if (computerTurnCountRef.current % 2 === 0) {
+      if (computerTurnCountRef.current >= nextVoiceoverTurnRef.current) {
         playVoiceover();
+        nextVoiceoverTurnRef.current = computerTurnCountRef.current + minGap + Math.floor(Math.random() * window);
       }
     }
 
@@ -780,7 +780,7 @@ function App() {
     setHeatMap(null);
     setFiredProbabilities({});
     computerTurnCountRef.current = 0;
-    turnsSinceCheekyVoiceoverRef.current = 0;
+    nextVoiceoverTurnRef.current = null;
   };
 
   return (
