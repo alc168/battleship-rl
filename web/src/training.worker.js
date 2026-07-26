@@ -67,7 +67,7 @@ function selectPattern(placementMemory) {
   return entry?.pattern || null;
 }
 
-function buildDelta(games, weightMap, placementMemory) {
+async function buildDelta(games, weightMap, placementMemory) {
   const delta = {};
   let abortedGames = 0;
 
@@ -175,6 +175,8 @@ function buildDelta(games, weightMap, placementMemory) {
 
     if ((g + 1) % CONFIG.CHUNK_SIZE === 0) {
       self.postMessage({ type: 'progress', completed: g + 1, total: games });
+      // Yield the event loop so progress messages are delivered to the main thread live
+      await new Promise(resolve => setTimeout(resolve, 0));
     }
   }
 
@@ -199,13 +201,13 @@ function buildDelta(games, weightMap, placementMemory) {
   return result;
 }
 
-self.onmessage = (event) => {
+self.onmessage = async (event) => {
   const { weightMap, placementMemory } = event.data;
   console.log('Training worker starting', CONFIG.GAMES_PER_BATCH, 'games');
   const start = performance.now();
 
   try {
-    const delta = buildDelta(CONFIG.GAMES_PER_BATCH, weightMap, placementMemory);
+    const delta = await buildDelta(CONFIG.GAMES_PER_BATCH, weightMap, placementMemory);
     const elapsed = performance.now() - start;
 
     self.postMessage({

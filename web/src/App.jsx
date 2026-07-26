@@ -135,7 +135,9 @@ function App() {
   const [heatMap, setHeatMap] = useState(null);
   const [firedProbabilities, setFiredProbabilities] = useState({});
   const [humorLevel, setHumorLevel] = useState(1);
+  const [humanGames, setHumanGames] = useState(0);
   const [syntheticGames, setSyntheticGames] = useState(0);
+  const [knownStates, setKnownStates] = useState(0);
 
   // Web Worker reference for background training
   const workerRef = useRef(null);
@@ -158,6 +160,17 @@ function App() {
   const addLog = useCallback((message) => {
     const timestamp = new Date().toLocaleTimeString();
     setConsoleLog(prev => [...prev.slice(-99), `[${timestamp}] ${message}`]);
+  }, []);
+
+  const fetchStats = useCallback(() => {
+    fetch(`${API_BASE_URL}/api/stats`)
+      .then(response => response.json())
+      .then(data => {
+        setHumanGames(data.human_games || 0);
+        setSyntheticGames(data.synthetic_games || 0);
+        setKnownStates(data.states || 0);
+      })
+      .catch(error => console.error('Failed to load stats:', error));
   }, []);
 
   // Start continuous background training whenever a game is active or has just ended
@@ -252,7 +265,9 @@ function App() {
         const seeded = seedPlacementMemory(100);
         setPlacementMemory(seeded);
       });
-  }, []);
+
+    fetchStats();
+  }, [fetchStats]);
 
   // After each finished game, record the human layout to D1 and update local memory
   useEffect(() => {
@@ -266,11 +281,13 @@ function App() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...(API_KEY && { 'X-API-Key': API_KEY }) },
       body: JSON.stringify({ layout_json: layoutJson, win: humanWon })
-    }).catch(err => console.error('Failed to record layout:', err));
+    })
+      .then(() => fetchStats())
+      .catch(err => console.error('Failed to record layout:', err));
 
     // Update local placement memory immediately for the next game
     setPlacementMemory(prev => updatePlacementMemory(prev, playerShipPositions, humanWon, 100));
-  }, [winner, playerShipPositions]);
+  }, [winner, playerShipPositions, fetchStats]);
 
   // Initialize the training Web Worker once on mount
   useEffect(() => {
@@ -294,10 +311,13 @@ function App() {
           fetch(`${API_BASE_URL}/api/merge-weights`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', ...(API_KEY && { 'X-API-Key': API_KEY }) },
-            body: JSON.stringify({ delta })
+            body: JSON.stringify({ delta, games: completed })
           })
             .then(response => response.json())
-            .then(data => addLog(`Merged weights on server: ${data.states} states`))
+            .then(data => {
+              addLog(`Merged weights on server: ${data.states} states`);
+              fetchStats();
+            })
             .catch(err => addLog(`Failed to merge weights: ${err.message}`));
         }
         isTraining.current = false;
@@ -781,7 +801,6 @@ function App() {
   // Render the tactical information console with live logs and heatmap
   const renderInfoPanel = () => {
     const topActions = computerDecision?.topActions || [];
-    const humanGames = placementMemory.reduce((sum, e) => sum + (e.games || 0), 0);
 
     return (
       <div className="info-panel">
@@ -801,7 +820,7 @@ function App() {
           <div className="flex flex-col gap-3">
             {/* Humour dial */}
             <div className="info-section">
-              <div className="info-section-title">Opponent Personality</div>
+              <div className="info-section-title">Computer Personality</div>
               <div className="flex items-center gap-2">
                 <input
                   id="humor-range"
@@ -843,7 +862,7 @@ function App() {
                 <div className="text-cyan-300/80">Synthetic games:</div>
                 <div className="text-cyan-100 text-right">{syntheticGames}</div>
                 <div className="text-cyan-300/80">Known states:</div>
-                <div className="text-cyan-100 text-right">{weightMap ? Object.keys(weightMap).length : 0}</div>
+                <div className="text-cyan-100 text-right">{knownStates}</div>
               </div>
             </div>
 

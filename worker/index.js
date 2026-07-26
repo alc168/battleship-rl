@@ -254,7 +254,7 @@ export default {
         }
 
         const body = await request.json().catch(() => ({}));
-        const { delta } = body;
+        const { delta, games } = body;
 
         const validationError = validateDelta(delta);
         if (validationError) return error(validationError, 400, extraHeaders);
@@ -263,16 +263,27 @@ export default {
         const merged = mergeWeights(existing, delta);
         await putWeightMap(env, merged);
 
-        return json({ merged: true, states: Object.keys(merged).length }, 200, extraHeaders);
+        // Persist the number of synthetic games that produced this delta
+        const gameCount = Number.isInteger(games) && games >= 0 ? games : 0;
+        const currentSynthetic = parseInt(await env.KV.get('synthetic_games') || '0', 10);
+        const nextSynthetic = currentSynthetic + gameCount;
+        await env.KV.put('synthetic_games', String(nextSynthetic));
+
+        return json({ merged: true, states: Object.keys(merged).length, synthetic_games: nextSynthetic }, 200, extraHeaders);
       }
 
       if (url.pathname === '/api/stats' && request.method === 'GET') {
-        const { results } = await env.DB.prepare(
+        const { results: countResults } = await env.DB.prepare(
           'SELECT COUNT(*) as count FROM layouts'
         ).all();
-        const layoutCount = results[0]?.count || 0;
+        const { results: totalResults } = await env.DB.prepare(
+          'SELECT SUM(games) as total FROM layouts'
+        ).all();
+        const layoutCount = countResults[0]?.count || 0;
+        const humanGames = totalResults[0]?.total || 0;
+        const syntheticGames = parseInt(await env.KV.get('synthetic_games') || '0', 10);
         const weightMap = await getWeightMap(env);
-        return json({ layouts: layoutCount, states: Object.keys(weightMap).length }, 200, extraHeaders);
+        return json({ layouts: layoutCount, states: Object.keys(weightMap).length, human_games: humanGames, synthetic_games: syntheticGames }, 200, extraHeaders);
       }
 
       return error('Not found', 404, extraHeaders);

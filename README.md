@@ -227,7 +227,7 @@ A dedicated test suite lives in `admin/`. It runs on demand, validates every com
 ### Latest results
 
 ```text
-36/36 passed in 14.56s
+36/36 passed in 13.80s
 0 failed, 0 skipped
 ```
 

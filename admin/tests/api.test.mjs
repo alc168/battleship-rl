@@ -42,6 +42,8 @@ test('GET /api/stats returns numeric counts', async () => {
   const body = await json('/api/stats');
   expect(typeof body.layouts).toBe('number');
   expect(typeof body.states).toBe('number');
+  expect(typeof body.human_games).toBe('number');
+  expect(typeof body.synthetic_games).toBe('number');
 }, { component: 'Worker API', control: 'A1.2' });
 
 authTest('POST /api/record without API key returns 401', async () => {
@@ -114,6 +116,7 @@ authTest('POST /api/merge-weights accepts a valid delta and updates weight map',
   const body = await res.json();
   expect(body.merged).toBe(true);
   expect(body.states).toBeGreaterThan(0);
+  expect(typeof body.synthetic_games).toBe('number');
 }, { component: 'Worker API', control: 'CC7.2' });
 
 authTest('Rate limiting blocks excessive write requests from one IP', async () => {
