@@ -1,403 +1,255 @@
-# Battleships - RL v1.0a — Design and Operation
+# Battleships RL
 
-A browser-based Battleship game where a human plays against a computer opponent. The computer learns from every human game and from continuous self-play, storing what it learns in Cloudflare D1 and KV behind a Cloudflare Worker API.
+A browser-based Battleship game in which a human plays against a computer opponent that learns from every game. The computer improves its ship placement by copying successful human layouts and improves its shooting through continuous self-play. All learning is shared across players via a Cloudflare Worker API backed by Cloudflare D1 and KV.
 
-Live game: `https://alc168.github.io/battleships-rl/`  
-API: `https://battleship-rl-api.battleship-rl.workers.dev`
+**Live game:** [https://alc168.github.io/battleships-rl/](https://alc168.github.io/battleships-rl/)  
+**API:** [https://battleship-rl-api.battleship-rl.workers.dev](https://battleship-rl-api.battleship-rl.workers.dev)
 
 ---
 
-## Inspiration for the game
+## Inspiration
 
-The game's personality grew out of the 1975 Milton Bradley *Battleship* television
-commercial — the operatic, naval-battle staging of a children's board game. The
-intro audio (`battleshipsintro.mp3`) and on-screen text echo that dramatic,
-toy-theatre tone.
+The game is a modern, self-learning take on the classic Milton Bradley board game. Its sound effects pay homage to the operatic 1975 Milton Bradley *Battleship* television commercial, which staged naval combat with straight-faced theatricality and fortune-cookie asides. The in-game audio and Computer Tactical Console are intended to capture the same toy-theatre tone.
 
-You can watch the original commercial here:  
-[Milton Bradley Battleship game Opera TV commercial, 1975](https://www.youtube.com/watch?v=VXkVZ0rloio)
+[Watch the original 1975 commercial on YouTube](https://www.youtube.com/watch?v=VXkVZ0rloio)
 
-The **Computer Tactical Console** lets you move the computer from **Pragmatic**
-(dry military brief) through **Wry**, **Cheeky**, and **Philosophical**. The
-higher settings lean into British understatement, stiff-upper-lip delivery,
-absurdist naval metaphysics and fortune-cookie asides — all voiced with the same
-straight-faced theatricality as the advert.
+---
 
 ## Table of contents
 
-1. [Inspiration for the game](#inspiration-for-the-game)
-2. [Pre-training](#pre-training)
-3. [What it does](#what-it-does)
-4. [Components and architecture](#components-and-architecture)
-5. [How the computer makes a move](#how-the-computer-makes-a-move)
-6. [How the computer improves over time](#how-the-computer-improves-over-time)
-7. [Data flow](#data-flow)
+1. [Objectives](#objectives)
+2. [What it does](#what-it-does)
+3. [Pre-training](#pre-training)
+4. [Architecture at a glance](#architecture-at-a-glance)
+5. [Components](#components)
+6. [Data flow](#data-flow)
+7. [Cost and risk notes](#cost-and-risk-notes)
 8. [Security](#security)
-9. [Testing harness](#testing-harness)
-10. [Efficiency, responsiveness and cost-effectiveness](#efficiency-responsiveness-and-cost-effectiveness)
-11. [Configuration](#configuration)
-12. [Deployment](#deployment)
-13. [Development](#development)
-14. [Further reading](#further-reading)
+9. [Quickstart](#quickstart)
+10. [Testing](#testing)
+11. [Deployment](#deployment)
+12. [Repository map](#repository-map)
+
+---
+
+## Objectives
+
+The project is designed around four priorities, in order:
+
+1. **Player experience** — every computer move must feel instant, the UI must be responsive on desktop and mobile, and the game must be fun to play repeatedly.
+2. **Low cost** — the system should run comfortably inside Cloudflare's free tiers for a hobby-scale audience.
+3. **Elegance** — keep the architecture simple, avoid unnecessary backend state, and run as much logic as possible in the browser.
+4. **Self-improvement** — the computer should learn from every human game and from its own practice games, and that learning should be shared across sessions.
 
 ---
 
 ## What it does
 
-- A human places five ships on a 10×10 grid and takes turns firing at the computer's hidden fleet.
-- The computer places its ships using the best human layouts it has seen, then uses a learned "weight map" to pick shots.
-- While the game is active, a Web Worker simulates hundreds of Battleship games in the background.
-- The worker augments every recorded board state with its 7 symmetric rotations/reflections, multiplying effective training data by 8.
-- The results update the computer's shot-priority table, which is merged back to Cloudflare KV for the next game.
-- Every finished human game is recorded in Cloudflare D1, so the computer can learn which ship placements win.
-- A **Computer Tactical Console** shows live training logs, the computer's current "thinking", a real-time probability heatmap, and a personality dial from Pragmatic to Philosophical.
+- A human places five ships on a 10x10 grid and then takes turns firing at the computer's hidden fleet.
+- The computer places its own ships by copying high-performing human layouts it has seen before.
+- The computer chooses shots using a learned "weight map" that maps board states to the coordinates most likely to lead to victory.
+- If the weight map has no entry for a state, the computer falls back to hunt logic around known hits and then random fire.
+- While the game runs, a Web Worker plays batches of self-play games, producing win-rate deltas that are merged into the global weight map.
+- Every finished human game is recorded in D1, so the computer can learn which ship placements win.
+- A Computer Tactical Console shows live training logs, the computer's current thinking, a firing probability heatmap, combat statistics, and a humour dial.
 
 ---
 
 ## Pre-training
 
-The live browser game learns from every human game, but the computer also
-benefits from offline DQN self-play on local hardware. A PyTorch DQN plays
-large batches of Battleship games, updates Q-values from a replay buffer, and
-then evaluates a "Teacher" network to write a pre-computed `ai_policy.json`
-lookup table. Each key is a 100-character board state; each value is a ranked
-list of recommended shots, so the browser can look up a move instantly without
-running a neural network.
+The live browser game learns from every human game, but the computer also benefits from offline DQN self-play on local hardware. A PyTorch DQN plays large batches of Battleship games, updates Q-values from a replay buffer, and periodically exports a static `ai_policy.json` lookup table. The web build can load this file as a starting policy, and `training.worker.js` continues to refine the policy in real time as real games are played.
 
-The training runs on a **MacBook Air M4** (using Metal / `mps`) and an
-**Ubuntu laptop** (CPU only). The Mac is configured to push an updated
-`ai_policy.json` to GitHub every hour; the Ubuntu trainer runs locally for
-extra self-play experience and does not push. Both trainers resume from
-`dqn_battleship.pt`, `checkpoint.json` and the existing `ai_policy.json`, so
-they can stop and restart without losing progress.
+For the full methodology, the `ai_policy.json` format, and how the React game consumes the policy, see [PRETRAINING.md](PRETRAINING.md).
 
-For the full methodology, the `ai_policy.json` format, and how the React game
-consumes the policy, see [`PRETRAINING.md`](PRETRAINING.md).
+---
 
-## Components and architecture
+## Architecture at a glance
 
 ```
-┌─────────────────────┐        GET weight-map / top-layouts        ┌──────────────────────┐
-│   GitHub Pages      │ ◄────────────────────────────────────────► │   Cloudflare Worker  │
-│   (React + Vite)    │ POST record / merge-weights (with API key) │   (API + secrets)    │
-└─────────────────────┘                                            └──────────┬───────────┘
-       │                                                                      │
-       │  Spawns Web Worker for self-play                                     │
-       ▼                                                                      ▼
-┌─────────────────────┐                                             ┌──────────────┐  ┌──────────────┐
-│   Web Worker        │                                             │   D1         │  │   KV         │
-│   500-game batches  │                                             │   layouts    │  │   weight_map │
-│   + symmetry aug.   │                                             └──────────────┘  └──────────────┘
-└─────────────────────┘
++---------------+      GET weight-map / top-layouts      +------------------+
+| GitHub Pages  | <------------------------------------> | Cloudflare Worker|
+|  React + Vite |      POST record / merge-weights       |   API + secrets  |
++---------------+                                          +---------+--------+
+       |                                                             |
+       |  Spawns Web Worker for self-play                              |  D1
+       v                                                             v
++------------------+                                          +---------------+
+|   Web Worker     |                                          |  layouts      |
+| 250-game batches |                                          +---------------+
+| + symmetry aug.  |                                          +---------------+
++------------------+                                          |  weight_map   |
+                                                              +---------------+
 ```
+
+The architecture is a **hybrid edge with in-browser training**:
+
+- All move decisions are made in the browser, so there is no network latency during a turn.
+- Heavy simulation is offloaded to a Web Worker, keeping the UI responsive.
+- The Cloudflare Worker holds the only secrets and persists data to D1 and KV.
+- GitHub Pages hosts the static build.
+
+For the full design, data model, API surface, and cost analysis, see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
+---
+
+## Components
 
 ### Frontend (React + Vite)
 
-- Renders the two 10×10 grids, handles placement/attack clicks, and enforces the game rules.
-- Downloads the current `weight_map` once when the page loads.
-- Spawns a Web Worker to run self-play training continuously while the game is active.
-- POSTs finished human games and training deltas to the Cloudflare Worker.
-- Displays the **Computer Tactical Console** by default, with a heatmap that updates live and preserves historical probabilities on fired cells.
+- Renders the two grids, handles placement and attack clicks, and enforces game rules.
+- Loads the current weight map and top human layouts when the page opens.
+- Spawns a Web Worker that trains continuously while the game is active.
+- POSTs finished human games and training deltas to the Worker.
+- Displays the Computer Tactical Console by default.
 
-### Web Worker
+### Web Worker (`web/src/training.worker.js`)
 
 - Runs in a background thread so the UI stays responsive.
-- Plays batches of **500** self-play games.
-- For every shot, records the `board_key` and `coordinate`.
-- Generates all 7 symmetric variants (90°, 180°, 270°, horizontal flip, vertical flip, transpose, anti-diagonal) of each recorded state, storing the same action recommendation for every variant.
-- If the shooter wins the game, all recorded shots (and their symmetric counterparts) are credited with wins.
-- Returns a compact `delta` of `(board_key, coordinate)` win-rate updates.
+- Plays batches of 250 self-play games (configurable through `web/src/training.config.js`).
+- For every shot, records the board state and the coordinate fired.
+- Generates all seven symmetric variants (rotations and reflections) of each recorded state.
+- If the shooter wins, every recorded shot and its symmetric variants are credited with a win.
+- Returns a compact delta of `(board_key, coordinate)` win-rate updates.
 
-### Cloudflare Worker
+### Cloudflare Worker (`worker/index.js`)
 
 - A serverless API at the edge.
 - Holds the D1 and KV bindings so the browser never sees credentials.
 - Endpoints:
-  - `GET /api/weight-map` — current shot-priority map
-  - `GET /api/top-layouts` — best human ship layouts
-  - `POST /api/record` — store a finished human game
-  - `POST /api/merge-weights` — merge a training delta into KV
-  - `GET /api/stats` — layout count and state count
-- Enforces CORS, API-key auth on writes, payload validation, and per-IP rate limiting.
+  - `GET /api/weight-map` — current shot-priority map from KV.
+  - `GET /api/top-layouts` — best human ship layouts from D1.
+  - `POST /api/record` — store a finished human game in D1.
+  - `POST /api/merge-weights` — merge a training delta into KV.
+  - `GET /api/stats` — aggregate counts for the UI.
+- Enforces CORS, API-key authentication on writes, payload validation, and per-IP rate limiting backed by D1.
 
 ### Cloudflare D1
 
-- Stores up to **10,000** human ship layouts and their win/loss records.
+- Stores up to 10,000 human ship layouts and their win/loss records.
 - Each row: `layout_json`, `wins`, `games`, `win_rate`, `last_played`.
-- Used to choose the computer's own ship placements.
-- Human layouts are written through `POST /api/record` as JSON arrays of ship objects; the worker validates length and structure and uses parameterized SQL inserts.
+- Also stores per-IP rate-limit windows.
 
 ### Cloudflare KV
 
 - Stores the `weight_map` JSON object.
 - Key: a 100-character string representing the computer's view of the enemy board.
 - Value: a sorted list of `[row, col, win_rate, wins, samples]` arrays.
-- Updated by `POST /api/merge-weights` after validation.
-
----
-
-## How the computer makes a move
-
-### Ship placement
-
-1. At game start, the app fetches `top-layouts` from D1.
-2. It picks one of the top three layouts at random.
-3. It copies that layout onto the computer's grid.
-4. If no layouts exist, it falls back to random placement.
-
-### Shooting
-
-1. The computer creates a 100-character `board_key` from its view of the enemy board.
-2. `getAiMove` tries, in order:
-   - an exact match in the `weight_map`;
-   - the `empty_board` policy for mostly empty boards;
-   - the closest known board state within a Hamming distance of 6.
-3. If a known state is found, it fires at the highest-rated coordinate it has not already shot.
-4. If no key is known, or all stored cells have been shot, it uses hunt logic (target around unsunk hits) and then random fire.
-
-### Sinking a discovered ship
-
-When the computer hits a ship, adjacent cells are added to a hunt queue. The computer empties that queue before returning to the weight map, so a discovered ship is sunk as fast as possible.
-
----
-
-## How the computer improves over time
-
-The learning is a lightweight **Monte Carlo reinforcement-learning** approach. No neural network is used in the live game; instead, the computer keeps a table of win rates for every `(board state, action)` pair.
-
-### Shooting policy
-
-- During self-play, the worker records every `(board_key, coordinate)` fired by the shooter.
-- Each recorded state is immediately expanded into its 7 symmetric equivalents, giving 8x more data per game.
-- If the shooter wins the game, every recorded shot is credited with a win.
-- For each state, actions are ranked by `wins / samples`.
-- The top **20** actions per state are kept in KV (`MAX_ACTIONS_PER_STATE` = 20).
-- `getAiMove` can also reuse policies from nearby states, reducing random fallbacks.
-- Over many batches, the policy converges on the squares that are most likely to lead to victory from each board state.
-
-### Placement policy
-
-- When a human finishes a game, the app POSTs the human's ship layout (`playerShipPositions`) and the result to D1.
-- The worker validates the payload, then upserts the `layouts` table with `wins`, `games`, and `win_rate`.
-- The computer uses the highest `win_rate` layouts for its own ships.
-- Successful human placements therefore become more common for the computer.
+- Also stores the running `synthetic_games` counter.
 
 ---
 
 ## Data flow
 
-```
-Page loads
-    │
-    ├── GET /api/weight-map  ──►  KV  ──►  browser keeps weightMap in state
-    │
-    ├── GET /api/top-layouts ──►  D1  ──►  placementMemory state
-    │
-    ▼
-Game starts
-    │
-    ├── Web Worker starts 500-game batch
-    │        │
-    │        ├── Each recorded shot is mirrored across 7 symmetries
-    │        │
-    │        ▼
-    │   Worker returns delta
-    │        │
-    │        ▼
-    ├── Browser merges delta locally
-    │        │
-    │        ▼
-    ├── POST /api/merge-weights  ──►  Worker validates and writes to KV
-    │
-    ▼
-Human game ends
-    │
-    ├── POST /api/record  ──►  Worker validates and upserts D1 layout row
-    │
-    ▼
-Next game uses updated weight_map and placements
-```
+1. Page loads.
+2. Browser fetches `/api/weight-map` and `/api/top-layouts`.
+3. Player places ships and plays turns; all computer decisions use in-memory data.
+4. Web Worker runs 250-game batches in the background.
+5. Every `UPLOAD_INTERVAL_BATCHES` batches, the browser POSTs the accumulated delta to `/api/merge-weights`.
+6. Worker merges the delta into KV.
+7. When a real game ends, the browser POSTs the result to `/api/record` and D1 is updated.
+
+---
+
+## Cost and risk notes
+
+The project is configured to stay within Cloudflare's free tiers for a small audience, but the free tiers are real limits that can be exhausted.
+
+| Service | Free limit | Relevant operations |
+|---|---|---|
+| Workers | 100,000 requests/day | Every API call and page asset |
+| KV | 100,000 reads/day, 1,000 writes/day | `weight_map` and `synthetic_games` |
+| D1 | 5M rows read/day, 100,000 rows written/day | `layouts` queries and upserts |
+
+With the default `COST_FIRST` training preset, a single player produces roughly one `merge-weights` upload every 300 seconds, which is well under the KV write limit. `EXPERIENCE_FIRST` is much more aggressive and is intended for paid plans.
+
+Known scaling risks:
+
+- `GET /api/top-layouts` and the `/api/record` prune query can scan the `layouts` table as it grows.
+- `GET /api/stats` reads KV twice and runs two D1 aggregates per page load and per finished game.
+- The weight map value size can approach KV's 25 MiB per-value limit as the number of stored states grows.
+
+For a detailed cost model, mitigation strategies, and a what-if analysis, see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ---
 
 ## Security
 
-### What is safe
-
-- No API keys or `.env` files are committed to Git.
-- The Cloudflare Worker, not the browser, owns the D1 and KV bindings.
-- D1 inserts use parameterized queries, preventing SQL injection.
-
-### Current protections
-
-- **CORS** restricted to `https://alc168.github.io` and `http://localhost:5173`.
-- **API-key auth** on `POST /api/record` and `POST /api/merge-weights` using an `X-API-Key` header.
-- **Payload validation**:
-  - `/api/record` checks `layout_json` length and `win` boolean.
-  - `/api/merge-weights` checks state/action count, coordinate bounds, and total delta size.
-- **Rate limiting**: 30 write requests per IP per minute.
-- **Input sanitisation**: all JSON payloads are parsed defensively and rejected on malformed data.
-
-### Recommendations for production
-
-- Rotate the `API_KEY` periodically.
-- Monitor D1/KV usage in the Cloudflare dashboard and add stricter rate limits if needed.
-- Consider per-user or per-session tokens instead of a single shared key if the game becomes public.
+- API keys are held as Cloudflare Worker secrets, not in the browser bundle (the build-time `VITE_API_KEY` is embedded in the compiled JavaScript, which is the standard trade-off for a shared client key).
+- D1 queries use parameterized bindings.
+- POST endpoints require the API key and enforce per-IP rate limits.
+- API-key comparison uses `crypto.subtle.timingSafeEqual`.
+- CORS is restricted to known origins; `localhost` is allowed for local development but should be removed from production.
 
 ---
 
-## Testing harness
-
-A dedicated test suite lives in `admin/`. It runs on demand, validates every component, and writes a timestamped Markdown + JSON report.
-
-### What is tested
-
-| Component | Coverage | SOC 2 control |
-|---|---|---|
-| **Game logic** | Grid creation, placement, attacks, win detection, ship sinking, board keys, AI move selection, incomplete-pattern handling | CC7.2 |
-| **Training worker** | 500-game batch completes, symmetry augmentation, progress events emitted, delta returned | CC7.2 |
-| **Worker API** | `weight-map`, `top-layouts`, `stats` availability; `record` and `merge-weights` success/failure cases | A1.2, CC7.2 |
-| **Authentication** | Missing/invalid API keys rejected on write endpoints | CC6.1 |
-| **Input validation** | Oversized/malformed payloads rejected | CC6.6 |
-| **CORS** | Allowed origins pass preflight; disallowed origins are blocked | CC6.6 |
-| **Rate limiting** | Excessive write requests receive `429 Too Many Requests` | CC7.3 |
-
-### Latest results
-
-```text
-36/36 passed in 9.53s
-0 failed, 0 skipped
-```
-
-Reports are written to `admin/reports/latest.md` and `admin/reports/latest.json`.
-
-### Run tests locally
+## Quickstart
 
 ```bash
-cd admin
-cp .env.example .env
-# edit .env with your API_BASE_URL and API_KEY
-npm test
-```
-
-### Publish the admin report to GitHub Pages
-
-```bash
+# Install dependencies
 cd web
-npm run admin:publish
+npm install
+
+# Run the Vite dev server
+npm run dev
+
+# Run lint
+npx oxlint src/
+
+# Build for production
+npm run build
+
+# Deploy to GitHub Pages
 npm run deploy
 ```
 
----
+For the Worker:
 
-## Efficiency, responsiveness and cost-effectiveness
+```bash
+cd worker
+npm install
 
-### Efficiency
+# Local dev
+npm run dev
 
-- **Sparse tabular policy**: only the most useful `(state, action)` pairs are stored. The worker keeps at most 20 actions per state, pruning rarely-seen ones.
-- **Symmetry augmentation**: 8× effective data from the same 500 self-play games, giving much better coverage without extra CPU time.
-- **Early-exit Hamming search**: `getAiMove` can stop comparing keys as soon as a candidate exceeds the distance threshold.
-- **Compact delta format**: actions are sent as 4-element integer arrays and merged incrementally, minimising KV write size.
+# Deploy
+npx wrangler deploy
+```
 
-### Responsiveness
+You will need a `web/.env` file with:
 
-- The Web Worker runs self-play off the main thread, so clicks and animations stay smooth even while 500 games are simulated.
-- `weight_map` is fetched once at page load; subsequent training updates are merged locally and uploaded in small deltas.
-- The Computer Tactical Console updates from the same state transitions as the game, so the heatmap and decision log are always in sync.
-- `getAiMove` uses exact-key, empty-board, and nearest-state lookups, keeping shot selection fast (O(1) average, bounded Hamming scan).
-
-### Cost-effectiveness
-
-- **Cloudflare free tier**: static hosting on GitHub Pages, edge compute with the Worker, D1 for SQLite, and KV for the weight map all have generous free allowances.
-- **Batched KV writes**: one `merge-weights` call per 500-game batch keeps KV write operations low.
-- **Bounded storage**: D1 layouts are capped at 10,000 rows; KV states are pruned at 100,000 keys; deltas are limited to 2 MB.
-- **Throttled training**: `CONTINUOUS_INTERVAL_MS` pauses between batches and training pauses when the tab is hidden, saving CPU and bandwidth.
-
----
-
-## Configuration
-
-### Web app (`web/.env`)
-
-```env
+```
 VITE_API_BASE_URL=https://battleship-rl-api.battleship-rl.workers.dev
-VITE_API_KEY=your-shared-api-key
+VITE_API_KEY=<your-shared-api-key>
 VITE_TRAINING_MODE=COST_FIRST
 ```
 
-### Worker (`worker/wrangler.toml` and `worker/.dev.vars`)
+---
 
-- `ALLOWED_ORIGINS` is a public var in `wrangler.toml`.
-- `API_KEY` is a secret set via:
-
-```bash
-cd worker
-npx wrangler secret put API_KEY
-```
-
-For local development:
+## Testing
 
 ```bash
-cd worker
-cp .dev.vars.example .dev.vars
-# edit .dev.vars
+cd admin
+npm test
 ```
+
+The admin harness runs tests for game utilities, the training worker, the Worker API, and CORS/security controls. Some tests require an `admin/.env` with a valid `API_KEY`.
 
 ---
 
 ## Deployment
 
-### Web app (GitHub Pages)
-
-```bash
-cd web
-npm install
-npm run deploy
-```
-
-`npm run deploy` runs `vite build` and publishes `dist/` to the `gh-pages` branch.
-
-### Worker (Cloudflare)
-
-```bash
-cd worker
-npx wrangler deploy
-```
-
-### D1 schema
-
-```bash
-cd worker
-npx wrangler d1 execute battleship-rl-db --remote --file=./schema.sql
-```
+1. Update `web/.env` and `worker/.dev.vars` with the real `API_KEY` and API URL.
+2. Run `npm run deploy` inside `web/` to publish to GitHub Pages.
+3. Run `npx wrangler deploy` inside `worker/` to publish the Worker.
 
 ---
 
-## Development
+## Repository map
 
-```bash
-cd web
-npm install
-npm run dev
-```
-
-The Vite dev server starts on `http://localhost:5173`.
-
----
-
-## Audio
-
-The sound effects are a deliberate homage to the Milton Bradley *Battleship* television commercial that aired in 1975. That spot is remembered for its operatic, naval-battle staging of the classic board game, and the in-game audio cues echo its dramatic, toy-theatre tone.  Eleven labs https://elevenlabs.io/ was used to generate sound effects and British Voiceovers.
-
-You can watch the original 1975 commercial here:  
-[Milton Bradley Battleship game Opera TV commercial, 1975](https://www.youtube.com/watch?v=VXkVZ0rloio)
-
----
-
-## Further reading
-
-- `PRETRAINING.md` — local DQN self-play pipeline, `ai_policy.json` format, and how the React game consumes the policy
-- `BRIEFING.md` — university-level architecture and RL overview
-- `BRIEFING_AI_IMPROVEMENTS.md` — why the AI falls back to random and future improvement proposals
-- `ARCHITECTURE.md` — earlier system design notes
-- `admin/README.md` — how to run the test harness
+- [PRETRAINING.md](PRETRAINING.md) — local DQN self-play pipeline, `ai_policy.json` format, and how the React game consumes the policy.
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — full architecture, data model, API surface, cost/risk analysis, and roadmap.
+- [docs/HISTORY.md](docs/HISTORY.md) — how the architecture evolved and the key decisions behind it.
+- [docs/DEBUG_LOG.md](docs/DEBUG_LOG.md) — major bugs found during development and how they were resolved.
+- `web/` — React + Vite frontend.
+- `worker/` — Cloudflare Worker API.
+- `admin/` — test harness and reports.
