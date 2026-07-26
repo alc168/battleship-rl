@@ -145,6 +145,8 @@ function App() {
   const shipExplosionRef = useRef(null);
   const sunkAudioRef = useRef(null);
   const wellDoneAudioRef = useRef(null);
+  const introAudioRef = useRef(null);
+  const introPlayedRef = useRef(false);
   const prevPlayerSunkRef = useRef([]);
   const prevComputerSunkRef = useRef([]);
   const isTraining = useRef(false);
@@ -165,9 +167,11 @@ function App() {
 
   // Initialise audio effects once on mount
   useEffect(() => {
-    shipExplosionRef.current = new Audio('/ship-exploding.mp3');
-    sunkAudioRef.current = new Audio('/sunk.mp3');
-    wellDoneAudioRef.current = new Audio('/welldoneadmiral.mp3');
+    const base = import.meta.env.BASE_URL || '/';
+    shipExplosionRef.current = new Audio(`${base}ship-exploding.mp3`);
+    sunkAudioRef.current = new Audio(`${base}sunk.mp3`);
+    wellDoneAudioRef.current = new Audio(`${base}welldoneadmiral.mp3`);
+    introAudioRef.current = new Audio(`${base}battleshipsintro.mp3`);
   }, []);
 
   // Play win/loss sounds
@@ -178,6 +182,14 @@ function App() {
       wellDoneAudioRef.current?.play().catch(() => {});
     }
   }, [winner]);
+
+  // Play intro once when the player reaches the placement phase
+  useEffect(() => {
+    if (gamePhase === GAME_PHASES.PLACEMENT && !introPlayedRef.current && introAudioRef.current) {
+      introAudioRef.current.play().catch(() => {});
+      introPlayedRef.current = true;
+    }
+  }, [gamePhase]);
 
   // Play ship explosion whenever a new ship is sunk
   useEffect(() => {
