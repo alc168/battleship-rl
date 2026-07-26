@@ -440,17 +440,20 @@ function App() {
     const { grid: newComputerGrid, hit } = processAttack(computerGrid, row, col);
     const updatedMoves = [...playerMoves, { row, col, hit }];
 
-    if (!hit) {
-      playSound('miss.mp3');
-    }
-    
     setComputerGrid(newComputerGrid);
     setPlayerMoves(updatedMoves);
 
     // Check for newly sunk ships using updated moves (including this hit)
     const newSunkShips = checkSunkShips(computerShipPositions, updatedMoves);
+
+    if (hit && newSunkShips.length === computerSunkShips.length) {
+      playSound('hit.mp3');
+    } else if (!hit) {
+      playSound('miss.mp3');
+    }
+
     if (newSunkShips.length > computerSunkShips.length) {
-      playSound('ship-exploding.mp3');
+      playSound('sunk.mp3');
     }
     setComputerSunkShips(newSunkShips);
 
@@ -620,17 +623,20 @@ function App() {
     const { grid: newPlayerGrid, hit } = processAttack(playerGrid, row, col);
     const updatedMoves = [...computerMoves, { row, col, hit }];
 
-    if (!hit) {
-      playSound('miss.mp3');
-    }
-
     setPlayerGrid(newPlayerGrid);
     setComputerMoves(updatedMoves);
 
     // Determine which ships are sunk before deciding whether to keep hunting
     const newSunkShips = checkSunkShips(playerShipPositions, updatedMoves);
+
+    if (hit && newSunkShips.length === playerSunkShips.length) {
+      playSound('hit.mp3');
+    } else if (!hit) {
+      playSound('miss.mp3');
+    }
+
     if (newSunkShips.length > playerSunkShips.length) {
-      playSound('ship-exploding.mp3');
+      playSound('sunk.mp3');
     }
     setPlayerSunkShips(newSunkShips);
 
