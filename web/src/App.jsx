@@ -88,6 +88,12 @@ function getThinkingMessage(source, winRate, row, col, humor) {
       `I have not a clue, so ${sq} it is. Could be water, could be a destroyer; life is full of surprises.`,
       `Complete guesswork. If this hits, it is definitely skill and not luck.`,
       `Chaos is the only true captain. I surrender to ${sq}.`
+    ],
+    checkerboard: [
+      `No learned override for this state. Falling back to the classic checkerboard pattern at ${sq}.`,
+      `Parity is a powerful ally. I shall test ${sq} in the checkerboard hunt.`,
+      `Every ship of length two touches both colours, so ${sq} on the opposite colour is a safe bet.`,
+      `When in doubt, trust the checkerboard. ${sq} it is.`
     ]
   };
 

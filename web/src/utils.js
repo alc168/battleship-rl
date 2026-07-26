@@ -270,9 +270,80 @@ function countKnownCells(boardKey) {
   return count;
 }
 
+const CENTER_ROW = (GRID_SIZE - 1) / 2;
+const CENTER_COL = (GRID_SIZE - 1) / 2;
+
+function manhattanDistance(row, col) {
+  return Math.abs(row - CENTER_ROW) + Math.abs(col - CENTER_COL);
+}
+
+/**
+ * Return the best open cell of the given parity, sorted by closeness to the centre.
+ * parity = -1 means any open cell.
+ */
+function getOpenCellsByParity(boardKey, parity = -1) {
+  const cells = [];
+  for (let i = 0; i < boardKey.length; i++) {
+    if (boardKey[i] !== '0') continue;
+    const row = Math.floor(i / GRID_SIZE);
+    const col = i % GRID_SIZE;
+    if (parity !== -1 && (row + col) % 2 !== parity) continue;
+    cells.push({ row, col, distance: manhattanDistance(row, col) });
+  }
+  cells.sort((a, b) => a.distance - b.distance || a.row - b.row || a.col - b.col);
+  return cells;
+}
+
+/**
+ * A hardcoded checkerboard / parity fallback for Battleship search.
+ *
+ * - If an unsunk hit exists, target an orthogonally adjacent unknown cell
+ *   (this is the opposite colour from the hit, so it naturally follows parity).
+ * - Otherwise, fire on the open cells of a single checkerboard colour,
+ *   starting from the centre and spiralling outward.
+ * - If the chosen colour is exhausted, fall back to any open cell.
+ */
+export const getCheckerboardMove = (boardKey) => {
+  const adjacent = [];
+  const directions = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+
+  for (let i = 0; i < boardKey.length; i++) {
+    if (boardKey[i] !== '2') continue; // 2 = unsunk hit
+    const row = Math.floor(i / GRID_SIZE);
+    const col = i % GRID_SIZE;
+    for (const [dr, dc] of directions) {
+      const nr = row + dr;
+      const nc = col + dc;
+      if (nr >= 0 && nr < GRID_SIZE && nc >= 0 && nc < GRID_SIZE) {
+        const ni = nr * GRID_SIZE + nc;
+        if (boardKey[ni] === '0') {
+          adjacent.push({ row: nr, col: nc, distance: manhattanDistance(nr, nc) });
+        }
+      }
+    }
+  }
+
+  if (adjacent.length > 0) {
+    adjacent.sort((a, b) => a.distance - b.distance || a.row - b.row || a.col - b.col);
+    return adjacent[0];
+  }
+
+  const evenParity = getOpenCellsByParity(boardKey, 1); // (row + col) % 2 === 1
+  if (evenParity.length > 0) return evenParity[0];
+
+  const any = getOpenCellsByParity(boardKey, -1);
+  return any[0] || null;
+};
+
 /**
  * Look up the Teacher's recommended move for the current board state.
- * Falls back to null so the caller can use random/hunt logic instead.
+ * Falls back to the hardcoded checkerboard algorithm if no policy entry exists.
+ *
+ * Improvements:
+ * 1. Exact match.
+ * 2. empty_board for mostly-unknown states.
+ * 3. Closest known state within a small Hamming distance.
+ * 4. Checkerboard parity fallback.
  *
  * Improvements:
  * 1. Exact match.
@@ -303,7 +374,12 @@ export const getAiMove = (boardKey, aiPolicy, computerMoves) => {
     }
   }
 
-  if (!recommendations || recommendations.length === 0) return null;
+  if (!recommendations || recommendations.length === 0) {
+    // Fall back to the hardcoded checkerboard / parity algorithm.
+    const fallback = getCheckerboardMove(boardKey);
+    if (!fallback) return null;
+    return { ...fallback, source: 'checkerboard', key: 'checkerboard' };
+  }
 
   for (const [row, col] of recommendations) {
     if (!computerMoves.some(move => move.row === row && move.col === col)) {
@@ -311,7 +387,10 @@ export const getAiMove = (boardKey, aiPolicy, computerMoves) => {
     }
   }
 
-  return null;
+  // All known recommendations are already attacked; use checkerboard fallback.
+  const fallback = getCheckerboardMove(boardKey);
+  if (!fallback) return null;
+  return { ...fallback, source: 'checkerboard', key: 'checkerboard' };
 };
 
 
