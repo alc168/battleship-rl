@@ -221,9 +221,16 @@ function App() {
     const result = placeRemainingShipsRandomly(playerGrid, playerShipPositions, currentShipIndex);
     setPlayerGrid(result.grid);
     setPlayerShipPositions(result.shipPositions);
-    setPlayerPlacedShips(prev => [...prev, ...result.placedShipNames]);
+    setPlayerPlacedShips(result.shipPositions.map(s => s.name));
+    setCurrentShipIndex(result.nextIndex);
+
+    if (result.nextIndex < SHIPS.length) {
+      addLog(`Random placement could not place all ships; ${SHIPS.length - result.nextIndex} remain. Please finish manually or try again.`);
+      return;
+    }
+
     startGame();
-  }, [playerGrid, playerShipPositions, currentShipIndex, startGame]);
+  }, [playerGrid, playerShipPositions, currentShipIndex, startGame, addLog]);
 
   // Keyboard shortcuts: R rotates orientation, Enter randomly places remaining ships
   useEffect(() => {
@@ -372,7 +379,8 @@ function App() {
   // Place the current ship on the player grid and advance to the next one
   const handlePlacement = (row, col) => {
     const ship = SHIPS[currentShipIndex];
-    
+    if (!ship) return;
+
     if (isValidPlacement(playerGrid, ship, row, col, orientation)) {
       const result = placeShipWithTracking(playerGrid, ship, row, col, orientation, playerShipPositions);
       
@@ -1006,7 +1014,8 @@ function App() {
               </button>
               <button
                 onClick={handleRandomPlacement}
-                className="tactical-button px-3 py-1 rounded text-xs"
+                disabled={currentShipIndex >= SHIPS.length}
+                className="tactical-button px-3 py-1 rounded text-xs disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 🎲 RANDOM
               </button>

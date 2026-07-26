@@ -158,9 +158,12 @@ export const placeRemainingShipsRandomly = (grid, shipPositions, startIndex) => 
   let newGrid = grid.map(row => [...row]);
   let newShipPositions = [...shipPositions];
   const placedShipNames = [];
+  const placedSet = new Set(newShipPositions.map(s => s.name));
   
   for (let i = startIndex; i < SHIPS.length; i++) {
     const ship = SHIPS[i];
+    if (placedSet.has(ship.name)) continue;
+    
     let placed = false;
     let attempts = 0;
     const maxAttempts = 100;
@@ -174,6 +177,7 @@ export const placeRemainingShipsRandomly = (grid, shipPositions, startIndex) => 
         newGrid = result.grid;
         newShipPositions = result.shipPositions;
         placed = true;
+        placedSet.add(ship.name);
         placedShipNames.push(ship.name);
       }
       
@@ -185,7 +189,8 @@ export const placeRemainingShipsRandomly = (grid, shipPositions, startIndex) => 
     }
   }
   
-  return { grid: newGrid, shipPositions: newShipPositions, placedShipNames };
+  const nextIndex = SHIPS.findIndex(s => !placedSet.has(s.name));
+  return { grid: newGrid, shipPositions: newShipPositions, placedShipNames, nextIndex: nextIndex === -1 ? SHIPS.length : nextIndex };
 };
 
 export const checkSunkShips = (shipPositions, hits) => {
