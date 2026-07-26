@@ -14,6 +14,40 @@ import { CONFIG } from './training.config.js';
 
 const MAX_MOVES_PER_GAME = 200;
 
+const N = GRID_SIZE;
+
+// Symmetry transforms for the 10×10 board key and (row,col) coordinates.
+// Each returns a new key string and a new action coordinate so that the same
+// tactical recommendation can be learned from eight equivalent viewpoints.
+function idxToCoord(i) {
+  return { row: Math.floor(i / N), col: i % N };
+}
+
+function coordToIdx(row, col) {
+  return row * N + col;
+}
+
+function transformKey(key, transform) {
+  const out = new Array(key.length).fill('0');
+  for (let i = 0; i < key.length; i++) {
+    const { row, col } = idxToCoord(i);
+    const t = transform(row, col);
+    out[coordToIdx(t.row, t.col)] = key[i];
+  }
+  return out.join('');
+}
+
+const transforms = [
+  { name: 'identity',    f: (r, c) => ({ row: r, col: c }) },
+  { name: 'rot90',       f: (r, c) => ({ row: c, col: N - 1 - r }) },
+  { name: 'rot180',      f: (r, c) => ({ row: N - 1 - r, col: N - 1 - c }) },
+  { name: 'rot270',      f: (r, c) => ({ row: N - 1 - c, col: r }) },
+  { name: 'flipH',       f: (r, c) => ({ row: N - 1 - r, col: c }) },
+  { name: 'flipV',       f: (r, c) => ({ row: r, col: N - 1 - c }) },
+  { name: 'transpose',   f: (r, c) => ({ row: c, col: r }) },
+  { name: 'antiDiag',    f: (r, c) => ({ row: N - 1 - c, col: N - 1 - r }) }
+];
+
 function getUnattackedMove(moves) {
   const used = new Set(moves.map(m => `${m.row},${m.col}`));
   const available = [];
@@ -89,7 +123,16 @@ function buildDelta(games, weightMap, placementMemory) {
         break;
       }
 
-      trace.push({ boardKey, row: action.row, col: action.col });
+      // Augment with all 7 symmetric variants plus identity. This multiplies
+      // effective training data by 8 without playing extra games.
+      for (const t of transforms) {
+        trace.push({
+          boardKey: transformKey(boardKey, t.f),
+          row: t.f(action.row, action.col).row,
+          col: t.f(action.row, action.col).col
+        });
+      }
+
       const res = processAttack(opponentGrid, action.row, action.col);
       shooterMoves.push({ row: action.row, col: action.col, hit: res.hit });
       opponentGrid = res.grid;
