@@ -7,20 +7,38 @@ API: `https://battleship-rl-api.battleship-rl.workers.dev`
 
 ---
 
+## Inspiration for the game
+
+The game's personality grew out of the 1975 Milton Bradley *Battleship* television
+commercial — the operatic, naval-battle staging of a children's board game. The
+intro audio (`battleshipsintro.mp3`) and on-screen text echo that dramatic,
+toy-theatre tone.
+
+You can watch the original commercial here:  
+[Milton Bradley Battleship game Opera TV commercial, 1975](https://www.youtube.com/watch?v=VXkVZ0rloio)
+
+The **Computer Tactical Console** lets you move the computer from **Pragmatic**
+(dry military brief) through **Wry**, **Cheeky**, and **Philosophical**. The
+higher settings lean into British understatement, stiff-upper-lip delivery,
+absurdist naval metaphysics and fortune-cookie asides — all voiced with the same
+straight-faced theatricality as the advert.
+
 ## Table of contents
 
-1. [What it does](#what-it-does)
-2. [Components and architecture](#components-and-architecture)
-3. [How the computer makes a move](#how-the-computer-makes-a-move)
-4. [How the computer improves over time](#how-the-computer-improves-over-time)
-5. [Data flow](#data-flow)
-6. [Security](#security)
-7. [Testing harness](#testing-harness)
-8. [Efficiency, responsiveness and cost-effectiveness](#efficiency-responsiveness-and-cost-effectiveness)
-9. [Configuration](#configuration)
-10. [Deployment](#deployment)
-11. [Development](#development)
-12. [Further reading](#further-reading)
+1. [Inspiration for the game](#inspiration-for-the-game)
+2. [Pre-training](#pre-training)
+3. [What it does](#what-it-does)
+4. [Components and architecture](#components-and-architecture)
+5. [How the computer makes a move](#how-the-computer-makes-a-move)
+6. [How the computer improves over time](#how-the-computer-improves-over-time)
+7. [Data flow](#data-flow)
+8. [Security](#security)
+9. [Testing harness](#testing-harness)
+10. [Efficiency, responsiveness and cost-effectiveness](#efficiency-responsiveness-and-cost-effectiveness)
+11. [Configuration](#configuration)
+12. [Deployment](#deployment)
+13. [Development](#development)
+14. [Further reading](#further-reading)
 
 ---
 
@@ -35,6 +53,26 @@ API: `https://battleship-rl-api.battleship-rl.workers.dev`
 - A **Computer Tactical Console** shows live training logs, the computer's current "thinking", a real-time probability heatmap, and a personality dial from Pragmatic to Philosophical.
 
 ---
+
+## Pre-training
+
+The live browser game learns from every human game, but the computer also
+benefits from offline DQN self-play on local hardware. A PyTorch DQN plays
+large batches of Battleship games, updates Q-values from a replay buffer, and
+then evaluates a "Teacher" network to write a pre-computed `ai_policy.json`
+lookup table. Each key is a 100-character board state; each value is a ranked
+list of recommended shots, so the browser can look up a move instantly without
+running a neural network.
+
+The training runs on a **MacBook Air M4** (using Metal / `mps`) and an
+**Ubuntu laptop** (CPU only). The Mac is configured to push an updated
+`ai_policy.json` to GitHub every hour; the Ubuntu trainer runs locally for
+extra self-play experience and does not push. Both trainers resume from
+`dqn_battleship.pt`, `checkpoint.json` and the existing `ai_policy.json`, so
+they can stop and restart without losing progress.
+
+For the full methodology, the `ai_policy.json` format, and how the React game
+consumes the policy, see [`PRETRAINING.md`](PRETRAINING.md).
 
 ## Components and architecture
 
@@ -358,6 +396,7 @@ You can watch the original 1975 commercial here:
 
 ## Further reading
 
+- `PRETRAINING.md` — local DQN self-play pipeline, `ai_policy.json` format, and how the React game consumes the policy
 - `BRIEFING.md` — university-level architecture and RL overview
 - `BRIEFING_AI_IMPROVEMENTS.md` — why the AI falls back to random and future improvement proposals
 - `ARCHITECTURE.md` — earlier system design notes
