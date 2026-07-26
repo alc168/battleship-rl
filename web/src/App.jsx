@@ -173,12 +173,16 @@ function App() {
       .catch(error => console.error('Failed to load stats:', error));
   }, []);
 
-  // Start continuous background training whenever a game is active or has just ended
+  // Start background training as soon as the weight map is loaded
   useEffect(() => {
-    if (gamePhase !== GAME_PHASES.PLAYING && gamePhase !== GAME_PHASES.GAME_OVER) return;
-    if (!weightMapRef.current || isTraining.current) return;
-    scheduleNextTraining();
-  }, [gamePhase]);
+    if (!weightMap || isTraining.current) return;
+    scheduleNextTraining(0);
+  }, [weightMap]);
+
+  // Keep the known-states counter in sync with the local weight map
+  useEffect(() => {
+    setKnownStates(weightMap ? Object.keys(weightMap).length : 0);
+  }, [weightMap]);
 
   // Randomly place enemy ships and start the playing phase
   const startGame = useCallback(() => {
@@ -609,15 +613,18 @@ function App() {
     setIsPlayerTurn(true);
   };
 
-  // Queue the next training batch if the game is still active
+  // Queue the next training batch
   function scheduleNextTraining(delay = CONFIG.TRAINING_DELAY_MS) {
     if (isTraining.current) return;
     if (!weightMapRef.current) return;
     if (document.hidden) return;
-    if (gamePhaseRef.current !== GAME_PHASES.PLAYING && gamePhaseRef.current !== GAME_PHASES.GAME_OVER) return;
 
     isTraining.current = true;
-    addLog(`Scheduling background training in ${delay}ms`);
+    if (delay === 0) {
+      addLog('Starting background training immediately');
+    } else {
+      addLog(`Scheduling background training in ${delay}ms`);
+    }
     setTimeout(() => {
       if (document.hidden || !workerRef.current) {
         isTraining.current = false;
