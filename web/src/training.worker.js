@@ -116,13 +116,22 @@ self.onmessage = (event) => {
   const { weightMap, placementMemory } = event.data;
   console.log('Training worker starting', CONFIG.GAMES_PER_BATCH, 'games');
   const start = performance.now();
-  const delta = buildDelta(CONFIG.GAMES_PER_BATCH, weightMap, placementMemory);
-  const elapsed = performance.now() - start;
 
-  self.postMessage({
-    type: 'complete',
-    delta,
-    completed: CONFIG.GAMES_PER_BATCH,
-    elapsed
-  });
+  try {
+    const delta = buildDelta(CONFIG.GAMES_PER_BATCH, weightMap, placementMemory);
+    const elapsed = performance.now() - start;
+
+    self.postMessage({
+      type: 'complete',
+      delta,
+      completed: CONFIG.GAMES_PER_BATCH,
+      elapsed
+    });
+  } catch (err) {
+    console.error('Training worker failed:', err);
+    self.postMessage({
+      type: 'error',
+      error: err.message || String(err)
+    });
+  }
 };

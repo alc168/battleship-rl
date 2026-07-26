@@ -183,7 +183,7 @@ function App() {
     const worker = new Worker(new URL('./training.worker.js', import.meta.url), { type: 'module' });
 
     worker.onmessage = (event) => {
-      const { type, delta, completed, elapsed, total } = event.data;
+      const { type, delta, completed, elapsed, total, error } = event.data;
 
       if (type === 'progress') {
         console.log(`Training progress: ${completed}/${total} games`);
@@ -203,6 +203,12 @@ function App() {
             .then(data => console.log('Merged weights on server:', data))
             .catch(err => console.error('Failed to merge weights:', err));
         }
+        isTraining.current = false;
+        return;
+      }
+
+      if (type === 'error') {
+        console.error('Training worker reported an error:', error);
         isTraining.current = false;
       }
     };
