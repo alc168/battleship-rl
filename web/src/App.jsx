@@ -147,6 +147,7 @@ function App() {
   const workerRef = useRef(null);
   const consoleFeedRef = useRef(null);
   const introPlayedRef = useRef(false);
+  const activeAudioRef = useRef(new Set());
   const isTraining = useRef(false);
   const weightMapRef = useRef(weightMap);
   const placementMemoryRef = useRef(placementMemory);
@@ -171,13 +172,27 @@ function App() {
     return () => mql.removeEventListener('change', update);
   }, []);
 
+  // Stop all active audio immediately when sound is muted
+  useEffect(() => {
+    if (soundOn) return;
+    activeAudioRef.current.forEach(audio => {
+      audio.pause();
+      audio.currentTime = 0;
+    });
+    activeAudioRef.current.clear();
+  }, [soundOn]);
+
   // Create and play a sound, using the Vite base URL so paths work on GitHub Pages
   const playSound = useCallback((filename) => {
     if (!soundOn) return;
     try {
       const base = import.meta.env.BASE_URL || '/';
       const audio = new Audio(`${base}${filename}`);
+      activeAudioRef.current.add(audio);
+      audio.onended = () => activeAudioRef.current.delete(audio);
+      audio.onerror = () => activeAudioRef.current.delete(audio);
       audio.play().catch((err) => {
+        activeAudioRef.current.delete(audio);
         console.warn('Audio play failed:', filename, err.message);
       });
     } catch (err) {
@@ -256,6 +271,7 @@ function App() {
     if (!introPlayedRef.current) {
       playSound('battleshipsintro.mp3');
       introPlayedRef.current = true;
+      sessionStorage.setItem('introPlayed', 'true');
     }
 
     const result = placeRemainingShipsRandomly(playerGrid, playerShipPositions, currentShipIndex);
@@ -407,18 +423,19 @@ function App() {
     return () => worker.terminate();
   }, [addLog]);
 
-  // Reset the intro flag each time the game returns to ship placement
+  // Restore the intro flag from the session so a page refresh does not replay it
   useEffect(() => {
-    if (gamePhase === GAME_PHASES.PLACEMENT) {
-      introPlayedRef.current = false;
+    if (sessionStorage.getItem('introPlayed') === 'true') {
+      introPlayedRef.current = true;
     }
-  }, [gamePhase]);
+  }, []);
 
   // Route grid clicks to placement or attack handlers based on game phase
   const handleCellClick = (row, col, isComputerGrid) => {
     if (!introPlayedRef.current) {
       playSound('battleshipsintro.mp3');
       introPlayedRef.current = true;
+      sessionStorage.setItem('introPlayed', 'true');
     }
 
     if (gamePhase === GAME_PHASES.PLACEMENT && !isComputerGrid) {
@@ -716,6 +733,8 @@ function App() {
   }
 
   const resetGame = () => {
+    introPlayedRef.current = false;
+    sessionStorage.removeItem('introPlayed');
     setGamePhase(GAME_PHASES.PLACEMENT);
     setPlayerGrid(createEmptyGrid());
     setComputerGrid(createEmptyGrid());
@@ -1056,38 +1075,40 @@ function App() {
   return (
     <div className="screen-fit operations-room">
       {/* Header */}
-      <div className="header-compact relative">
-        <h1 className="text-2xl font-bold text-green-400 tracking-wider font-mono">
-          Battleships - RL
-        </h1>
-        <div className="absolute top-0 right-4 flex items-center gap-3 text-xs text-green-600 font-mono">
-          <span>v{APP_VERSION}</span>
+      <div className="flex flex-col sm:flex-row items-center justify-between gap-2 px-4 py-2 shrink-0 operations-panel rounded-lg">
+        <div className="flex items-baseline gap-2">
+          <h1 className="text-xl sm:text-2xl font-bold text-green-400 tracking-wider font-mono">
+            Battleships - RL
+          </h1>
+          <span className="text-[10px] text-green-600 font-mono">v{APP_VERSION}</span>
+        </div>
+        <div className="flex items-center gap-2 text-xs text-green-600 font-mono">
           <button
             onClick={() => setSoundOn(prev => !prev)}
-            className="tactical-button px-3 py-1 rounded text-xs"
+            className="tactical-button p-2 rounded"
             aria-label={soundOn ? 'Turn sound off' : 'Turn sound on'}
           >
             <svg viewBox="0 0 24 24" className="w-4 h-4" aria-hidden="true">
-                {soundOn ? (
-                  <>
-                    <path d="M3 9v6h4l5 4V5L7 9H3z" fill="currentColor" className="text-green-300" />
-                    <path d="M15 10.5a3 3 0 0 1 0 3M18.5 7.5a7 7 0 0 1 0 9" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="text-green-300" />
-                  </>
-                ) : (
-                  <>
-                    <path d="M3 9v6h4l5 4V5L7 9H3z" fill="currentColor" className="text-green-300" />
-                    <circle cx="12" cy="12" r="9" fill="none" stroke="#ef4444" strokeWidth="2" />
-                    <line x1="6" y1="6" x2="18" y2="18" stroke="#ef4444" strokeWidth="2" strokeLinecap="round" />
-                  </>
-                )}
-              </svg>
+              {soundOn ? (
+                <>
+                  <path d="M3 9v6h4l5 4V5L7 9H3z" fill="currentColor" className="text-green-300" />
+                  <path d="M15 10.5a3 3 0 0 1 0 3M18.5 7.5a7 7 0 0 1 0 9" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="text-green-300" />
+                </>
+              ) : (
+                <>
+                  <path d="M3 9v6h4l5 4V5L7 9H3z" fill="currentColor" className="text-green-300" />
+                  <circle cx="12" cy="12" r="9" fill="none" stroke="#ef4444" strokeWidth="2" />
+                  <line x1="6" y1="6" x2="18" y2="18" stroke="#ef4444" strokeWidth="2" strokeLinecap="round" />
+                </>
+              )}
+            </svg>
           </button>
           <button
             onClick={() => setShowInfoPanel(prev => !prev)}
-            className="tactical-button px-3 py-1 rounded text-xs uppercase tracking-wider"
+            className="tactical-button px-3 py-2 rounded text-xs uppercase tracking-wider"
             aria-label={showInfoPanel ? 'Close computer tactical console' : 'Open computer tactical console'}
           >
-            {showInfoPanel ? 'Close Console' : 'Computer Tactical Console'}
+            {showInfoPanel ? 'Close Console' : 'Console'}
           </button>
         </div>
       </div>
