@@ -10,9 +10,9 @@
 
 export const PRESETS = {
   COST_FIRST: {
-    GAMES_PER_BATCH: 250,           // larger batch; one KV write per batch
+    GAMES_PER_BATCH: 250,           // larger batch; fewer API writes per game
     CHUNK_SIZE: 50,                 // report progress every 50 games
-    UPLOAD_INTERVAL_BATCHES: 1,     // one API write per completed batch
+    UPLOAD_INTERVAL_BATCHES: 10,    // upload every 10 completed batches
     MAX_ACTIONS_PER_STATE: 20,      // more candidate cells per known state
     MIN_SAMPLES_PER_ACTION: 3,      // keep actions but require minimal evidence
     MAX_STATES: 20000,              // hard cap on stored board states
@@ -20,7 +20,7 @@ export const PRESETS = {
     EXPLORATION_EPSILON: 0.25,      // cheaper because it explores more randomly
     MAX_WORKER_MS: 30000,           // allow longer chunks to reduce overhead
     TRAINING_DELAY_MS: 0,           // start training as soon as the game begins
-    CONTINUOUS_INTERVAL_MS: 5000,   // wait 5 seconds between continuous batches
+    CONTINUOUS_INTERVAL_MS: 30000,  // wait 30 seconds between continuous batches
     ENABLE_ON_MOBILE: false         // skip on mobile to save battery
   },
   EXPERIENCE_FIRST: {

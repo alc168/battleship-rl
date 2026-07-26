@@ -25,6 +25,7 @@ import {
   mergeWeightDelta
 } from './utils.js';
 import { API_BASE_URL, API_KEY } from './config.js';
+import { CONFIG } from './training.config.js';
 import './index.css';
 
 // A curated set of fortune-cookie-style asides for the Computer Tactical Console.
@@ -148,6 +149,9 @@ function App() {
 
   const consoleFeedRef = useRef(null);
   const introPlayedRef = useRef(false);
+  const pendingDeltaRef = useRef({});
+  const pendingGamesRef = useRef(0);
+  const batchesSinceUploadRef = useRef(0);
 
   const addLog = useCallback((message) => {
     const timestamp = new Date().toLocaleTimeString();
@@ -166,23 +170,50 @@ function App() {
   }, []);
 
   // Merge a training delta into the local weight map and push it to the server
+  // less frequently to stay inside the Cloudflare KV free tier.
   const handleTrainingDelta = useCallback((delta, completed) => {
     setSyntheticGames(prev => prev + (completed || 0));
-    if (delta && Object.keys(delta).length > 0) {
-      setWeightMap(prev => mergeWeightDelta(prev || {}, delta, 8));
+    if (!delta || Object.keys(delta).length === 0) return;
+
+    setWeightMap(prev => mergeWeightDelta(prev || {}, delta, 8));
+    pendingDeltaRef.current = mergeWeightDelta(pendingDeltaRef.current, delta, 8);
+    pendingGamesRef.current += (completed || 0);
+    batchesSinceUploadRef.current += 1;
+
+    const compactPending = (pending) => {
+      const result = {};
+      for (const [state, actions] of Object.entries(pending)) {
+        result[state] = actions.map(a => [a[0], a[1], a[3], a[4]]);
+      }
+      return result;
+    };
+
+    const pendingStates = Object.keys(pendingDeltaRef.current).length;
+    const uploadDelta = compactPending(pendingDeltaRef.current);
+    const pendingBytes = new TextEncoder().encode(JSON.stringify(uploadDelta)).length;
+
+    if (
+      batchesSinceUploadRef.current >= CONFIG.UPLOAD_INTERVAL_BATCHES ||
+      pendingStates > 8000 ||
+      pendingBytes > 1_800_000
+    ) {
       fetch(`${API_BASE_URL}/api/merge-weights`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...(API_KEY && { 'X-API-Key': API_KEY }) },
-        body: JSON.stringify({ delta, games: completed })
+        body: JSON.stringify({ delta: uploadDelta, games: pendingGamesRef.current })
       })
         .then(response => response.json())
         .then(data => {
           addLog(`Merged weights on server: ${data.states} states`);
-          fetchStats();
         })
-        .catch(err => addLog(`Failed to merge weights: ${err.message}`));
+        .catch(err => addLog(`Failed to merge weights: ${err.message}`))
+        .finally(() => {
+          pendingDeltaRef.current = {};
+          pendingGamesRef.current = 0;
+          batchesSinceUploadRef.current = 0;
+        });
     }
-  }, [setSyntheticGames, setWeightMap, addLog, fetchStats]);
+  }, [setSyntheticGames, setWeightMap, addLog]);
 
   // Initialize the background training worker
   useTraining(weightMap, placementMemory, handleTrainingDelta, addLog);
