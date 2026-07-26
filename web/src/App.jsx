@@ -741,11 +741,15 @@ function App() {
 
     // Personality-driven voiceovers
     computerTurnCountRef.current += 1;
-    if (humorLevel >= 2) {
-      // Cheeky: at least once every 20 turns, at a random turn at least 10 after the last play.
-      // Philosophical: at least once every 15 turns, at a random turn at least 5 after the last play.
-      const minGap = humorLevel === 2 ? 10 : 5;
-      const window = 11; // random spread so the next play is within the desired interval
+    if (humorLevel >= 1) {
+      // Pragmatic (0) never plays voiceovers.
+      // Wry (1): once every ~50 turns, no earlier than turn 10.
+      // Cheeky (2): once every ~20 turns, at least 10 turns after the last play.
+      // Philosophical (3): once every ~15 turns, at least 5 turns after the last play.
+      const { minGap, window } =
+        humorLevel === 1 ? { minGap: 10, window: 41 } :     // 10-50 turns
+        humorLevel === 2 ? { minGap: 10, window: 11 } :     // 10-20 turns
+                          { minGap: 5, window: 11 };       // 5-15 turns
       if (nextVoiceoverTurnRef.current === null) {
         nextVoiceoverTurnRef.current = minGap + Math.floor(Math.random() * window);
       }
