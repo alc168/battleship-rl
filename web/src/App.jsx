@@ -142,6 +142,11 @@ function App() {
   // Web Worker reference for background training
   const workerRef = useRef(null);
   const consoleFeedRef = useRef(null);
+  const shipExplosionRef = useRef(null);
+  const sunkAudioRef = useRef(null);
+  const wellDoneAudioRef = useRef(null);
+  const prevPlayerSunkRef = useRef([]);
+  const prevComputerSunkRef = useRef([]);
   const isTraining = useRef(false);
   const weightMapRef = useRef(weightMap);
   const placementMemoryRef = useRef(placementMemory);
@@ -157,6 +162,37 @@ function App() {
 
   useEffect(() => { placementMemoryRef.current = placementMemory; }, [placementMemory]);
   useEffect(() => { gamePhaseRef.current = gamePhase; }, [gamePhase]);
+
+  // Initialise audio effects once on mount
+  useEffect(() => {
+    shipExplosionRef.current = new Audio('/ship-exploding.mp3');
+    sunkAudioRef.current = new Audio('/sunk.mp3');
+    wellDoneAudioRef.current = new Audio('/welldoneadmiral.mp3');
+  }, []);
+
+  // Play win/loss sounds
+  useEffect(() => {
+    if (winner === 'computer') {
+      sunkAudioRef.current?.play().catch(() => {});
+    } else if (winner === 'player') {
+      wellDoneAudioRef.current?.play().catch(() => {});
+    }
+  }, [winner]);
+
+  // Play ship explosion whenever a new ship is sunk
+  useEffect(() => {
+    if (playerSunkShips.length > prevPlayerSunkRef.current.length) {
+      shipExplosionRef.current?.play().catch(() => {});
+    }
+    prevPlayerSunkRef.current = playerSunkShips;
+  }, [playerSunkShips]);
+
+  useEffect(() => {
+    if (computerSunkShips.length > prevComputerSunkRef.current.length) {
+      shipExplosionRef.current?.play().catch(() => {});
+    }
+    prevComputerSunkRef.current = computerSunkShips;
+  }, [computerSunkShips]);
 
   const addLog = useCallback((message) => {
     const timestamp = new Date().toLocaleTimeString();
