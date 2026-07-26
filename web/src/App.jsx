@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { GAME_PHASES, ORIENTATIONS, SHIPS, GRID_SIZE } from './constants.js';
 import { useAudio } from './hooks/useAudio.js';
+import { useVoiceovers } from './hooks/useVoiceovers.js';
 import { useMobile } from './hooks/useMobile.js';
 import { useTraining } from './hooks/useTraining.js';
 import { Header } from './components/Header.jsx';
@@ -145,7 +146,12 @@ function App() {
 
   const [soundOn, setSoundOn] = useState(true);
   const playSound = useAudio(soundOn);
+  const playVoiceover = useVoiceovers(soundOn);
   const isMobile = useMobile();
+
+  // Voiceover pacing for Cheeky and Philosophical personalities
+  const computerTurnCountRef = useRef(0);
+  const turnsSinceCheekyVoiceoverRef = useRef(0);
 
   // Tactical console: info panel, logs, and last computer decision
   // Tactical console is open by default on all viewports
@@ -733,6 +739,22 @@ function App() {
       return;
     }
 
+    // Personality-driven voiceovers
+    computerTurnCountRef.current += 1;
+    if (humorLevel === 2) {
+      // Cheeky: random but at least once every 5 computer turns
+      turnsSinceCheekyVoiceoverRef.current += 1;
+      if (turnsSinceCheekyVoiceoverRef.current >= 5 || Math.random() < 0.2) {
+        playVoiceover();
+        turnsSinceCheekyVoiceoverRef.current = 0;
+      }
+    } else if (humorLevel === 3) {
+      // Philosophical: every two computer turns
+      if (computerTurnCountRef.current % 2 === 0) {
+        playVoiceover();
+      }
+    }
+
     setIsPlayerTurn(true);
   };
 
@@ -757,6 +779,8 @@ function App() {
     setComputerDecision(null);
     setHeatMap(null);
     setFiredProbabilities({});
+    computerTurnCountRef.current = 0;
+    turnsSinceCheekyVoiceoverRef.current = 0;
   };
 
   return (
