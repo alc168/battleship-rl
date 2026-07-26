@@ -21,6 +21,83 @@ import { API_BASE_URL, API_KEY, TRAINING_MODE } from './config.js';
 import { CONFIG } from './training.config.js';
 import './index.css';
 
+// Humour dial labels
+const HUMOR_LABELS = ['Pragmatic', 'Wry', 'Cheeky', 'Philosophical'];
+
+// A curated set of fortune-cookie-style asides for the Computer Tactical Console.
+// Styled after the classic Unix `fortune` program.
+const FORTUNES = [
+  'A ship in harbour is safe, but that is not what ships are built for.',
+  'You will soon discover that the ocean is mostly water.',
+  'Patience is a virtue, unless you are being shelled.',
+  'The wise admiral checks the weather before firing the first shot.',
+  'To err is human; to miss entirely, also human.',
+  'A destroyer in the hand is worth two on the grid.',
+  'You cannot win if you do not shoot, but you can certainly lose elegantly.',
+  'Fortune favours the bold, and occasionally the algorithmically fortunate.',
+  'The early torpedo catches the cruiser.',
+  'Do not count your carriers before they have floated.',
+  'Battleship is like tea: best served with a bit of strategy and a lot of luck.',
+  'If at first you do not hit, try the square next door.',
+  'A calm sea never made a skilled sailor, but it does make aiming easier.',
+  'You will find what you seek, provided it is a battleship and you aim correctly.',
+  'The best defence is not being where the missiles land.'
+];
+
+function randomFortune() {
+  return FORTUNES[Math.floor(Math.random() * FORTUNES.length)];
+}
+
+function getThinkingMessage(source, winRate, row, col, humor) {
+  const p = Math.round(winRate * 100);
+  const sq = `[${row},${col}]`;
+
+  const messages = {
+    hunt: [
+      `Hunt mode: pursuing adjacent targets around a known hit.`,
+      `One hit does not a sunk ship make, but it does rather narrow the possibilities.`,
+      `I smell a ship. Or possibly a submarine. Either way, adjacent squares are now terribly unsafe.`,
+      `A hit! The hunt begins. What is life but a series of adjacent squares waiting to be explored?`
+    ],
+    exact: [
+      `I have seen this exact board before. The model recommends ${sq} with a ${p}% win probability.`,
+      `Ah, an old acquaintance of a board. ${sq} has a ${p}% chance of being productive.`,
+      `Déjà vu! I have been here before, and ${sq} looks promising at ${p}%.`,
+      `The universe repeats itself, and this board whispers that ${sq} is our destiny — ${p}% likely.`
+    ],
+    empty_board: [
+      `The board is mostly unknown. Using the empty-board opening policy.`,
+      `So little information, so many ocean tiles. Let us start with a classic.`,
+      `It is all a bit of a mystery, is it not? I shall probe ${sq} and see if anyone is home.`,
+      `In the void of the unknown, I choose ${sq}. If a ship is there, is it truly found?`
+    ],
+    closest: [
+      `No exact match, but a similar state is within reach. Using its recommendation for ${sq} (${p}% win rate).`,
+      `Not this exact board, but a near neighbour. ${sq} seems the best bet at ${p}%.`,
+      `I have not seen this precise mess, but I know a board that looks just like it. ${sq} at ${p}%.`,
+      `All states are echoes. ${sq} is the closest echo, ${p}% loud.`
+    ],
+    random: [
+      `No known policy for this state. Firing at random.`,
+      `I have not a clue, so ${sq} it is. Could be water, could be a destroyer; life is full of surprises.`,
+      `Complete guesswork. If this hits, it is definitely skill and not luck.`,
+      `Chaos is the only true captain. I surrender to ${sq}.`
+    ]
+  };
+
+  const message = messages[source]?.[humor] ?? messages[source]?.[0] ?? 'Thinking...';
+
+  let includeFortune = false;
+  if (humor >= 3) includeFortune = true;
+  else if (humor >= 2) includeFortune = Math.random() < 0.5;
+  else if (humor >= 1) includeFortune = Math.random() < 0.2;
+
+  if (includeFortune) {
+    return `${message}\n\nFortune cookie: ${randomFortune()}`;
+  }
+  return message;
+}
+
 function App() {
   // Core game state: placement grid, enemy grid, and turn management
   const [gamePhase, setGamePhase] = useState(GAME_PHASES.PLACEMENT);
@@ -57,6 +134,7 @@ function App() {
   const [computerDecision, setComputerDecision] = useState(null);
   const [heatMap, setHeatMap] = useState(null);
   const [firedProbabilities, setFiredProbabilities] = useState({});
+  const [humorLevel, setHumorLevel] = useState(1);
 
   // Web Worker reference for background training
   const workerRef = useRef(null);
@@ -388,15 +466,14 @@ function App() {
 
       if (!fallbackTarget) {
         boardKey = getBoardKey(computerMoves, playerShipPositions, playerSunkShips);
-        const emptyKey = '0'.repeat(GRID_SIZE * GRID_SIZE);
-        const recommendations = (weightMap && (weightMap[boardKey] || (boardKey === emptyKey && weightMap['empty_board']))) || [];
         const aiMove = getAiMove(boardKey, weightMap, computerMoves);
 
         if (aiMove) {
           row = aiMove.row;
           col = aiMove.col;
-          source = 'policy';
-          chosenRecommendation = recommendations.find(r => r[0] === row && r[1] === col) || null;
+          source = aiMove.source; // 'exact', 'empty_board' or 'closest'
+          const policyRecommendations = weightMap ? weightMap[aiMove.key] : [];
+          chosenRecommendation = policyRecommendations?.find(r => r[0] === row && r[1] === col) || null;
         } else {
           let validMove = false;
           while (!validMove) {
@@ -437,13 +514,10 @@ function App() {
     }));
 
     const winRate = chosenRecommendation ? chosenRecommendation[2] : 0;
-    const reasonText = source === 'hunt'
-      ? 'hunt target (sinking a known ship)'
-      : source === 'policy'
-        ? `weight map recommendation, win rate ${(winRate * 100).toFixed(1)}%`
-        : 'random fallback (no policy for this state)';
-    setComputerDecision({ row, col, boardKey: heatKey, source, winRate, reason: reasonText, topActions: heatRecommendations.slice(0, 5) });
-    addLog(`Computer firing at [${row},${col}] — ${reasonText}`);
+    const thinking = getThinkingMessage(source, winRate, row, col, humorLevel);
+    setComputerDecision({ row, col, boardKey: heatKey, source, winRate, reason: thinking, topActions: heatRecommendations.slice(0, 5), thinking });
+    addLog(thinking);
+    addLog(`Target: [${row},${col}]`);
 
     const { grid: newPlayerGrid, hit } = processAttack(playerGrid, row, col);
     const updatedMoves = [...computerMoves, { row, col, hit }];
@@ -451,24 +525,30 @@ function App() {
     setPlayerGrid(newPlayerGrid);
     setComputerMoves(updatedMoves);
 
-    // If hit, add adjacent cells to hunt targets
-    if (hit) {
-      const newTargets = getHuntDirectionTargets(row, col);
-      setComputerHuntTargets(prev => {
-        const combined = [...newTargets, ...prev];
-        const filtered = combined.filter((target, index, self) =>
-          index === self.findIndex(t => t.row === target.row && t.col === target.col) &&
-          !updatedMoves.some(move => move.row === target.row && move.col === target.col)
-        );
-        return filtered;
-      });
-    }
-
-    // Check for newly sunk ships using updated moves (including this hit)
+    // Determine which ships are sunk before deciding whether to keep hunting
     const newSunkShips = checkSunkShips(playerShipPositions, updatedMoves);
     setPlayerSunkShips(newSunkShips);
 
-    // Clear hunt targets for sunk ships
+    // Only add new hunt targets if this hit did not finish off a ship
+    if (hit) {
+      const hitShipSunk = newSunkShips.some(name => {
+        const ship = playerShipPositions.find(s => s.name === name);
+        return ship && ship.positions.some(pos => pos.row === row && pos.col === col);
+      });
+      if (!hitShipSunk) {
+        const newTargets = getHuntDirectionTargets(row, col);
+        setComputerHuntTargets(prev => {
+          const combined = [...newTargets, ...prev];
+          const filtered = combined.filter((target, index, self) =>
+            index === self.findIndex(t => t.row === target.row && t.col === target.col) &&
+            !updatedMoves.some(move => move.row === target.row && move.col === target.col)
+          );
+          return filtered;
+        });
+      }
+    }
+
+    // Clear any remaining hunt targets that belong to now-sunk ships
     setComputerHuntTargets(prev => prev.filter(target => !newSunkShips.some(name => {
       const sunkShip = playerShipPositions.find(ship => ship.name === name);
       return sunkShip && sunkShip.positions.some(pos => pos.row === target.row && pos.col === target.col);
@@ -707,6 +787,29 @@ function App() {
         </div>
 
         <div className="info-panel-content">
+          {/* Humour dial */}
+          <div className="info-section">
+            <div className="info-section-title">Opponent Personality</div>
+            <div className="flex items-center gap-2">
+              <input
+                id="humor-range"
+                type="range"
+                min="0"
+                max="3"
+                step="1"
+                value={humorLevel}
+                onChange={(e) => setHumorLevel(parseInt(e.target.value, 10))}
+                className="w-full accent-cyan-400"
+                aria-label="Humour level"
+              />
+            </div>
+            <div className="flex justify-between text-[10px] text-cyan-300/70 mt-1">
+              {HUMOR_LABELS.map((label, i) => (
+                <span key={label} className={i === humorLevel ? 'text-cyan-100 font-bold' : ''}>{label}</span>
+              ))}
+            </div>
+          </div>
+
           {/* Live console feed */}
           <div className="info-section">
             <div className="info-section-title">Training &amp; Event Log</div>
@@ -721,13 +824,24 @@ function App() {
             </div>
           </div>
 
+          {/* Current computer thinking */}
+          <div className="info-section">
+            <div className="info-section-title">Current Thinking</div>
+            {computerDecision ? (
+              <div className="text-xs italic text-cyan-100 whitespace-pre-line leading-relaxed">
+                {computerDecision.thinking}
+              </div>
+            ) : (
+              <div className="text-cyan-600/60 text-xs italic">The opponent is gathering itself...</div>
+            )}
+          </div>
+
           {/* Last computer decision */}
           <div className="info-section">
             <div className="info-section-title">Last Enemy Decision</div>
             {computerDecision ? (
               <div className="text-xs space-y-1">
                 <div className="text-cyan-300">Target: <span className="text-white">[{computerDecision.row},{computerDecision.col}]</span></div>
-                <div className="text-cyan-300/80">Reason: <span className="text-cyan-100">{computerDecision.reason}</span></div>
                 <div className="text-cyan-300/80">Source: <span className="text-cyan-100 uppercase">{computerDecision.source}</span></div>
                 <div className="text-cyan-300/60 font-mono text-[10px] break-all">State: {computerDecision.boardKey}</div>
               </div>

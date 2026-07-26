@@ -279,10 +279,14 @@ export const getAiMove = (boardKey, aiPolicy, computerMoves) => {
 
   const emptyKey = '0'.repeat(GRID_SIZE * GRID_SIZE);
   let recommendations = aiPolicy[boardKey];
+  let source = 'exact';
+  let matchedKey = boardKey;
 
   // If the board is almost empty and no exact match, use the empty-board policy
   if (!recommendations && countKnownCells(boardKey) <= 4 && aiPolicy['empty_board']) {
     recommendations = aiPolicy['empty_board'];
+    source = 'empty_board';
+    matchedKey = 'empty_board';
   }
 
   // Generalise from the closest known state (if within a small Hamming radius)
@@ -290,6 +294,8 @@ export const getAiMove = (boardKey, aiPolicy, computerMoves) => {
     const closest = getClosestBoardKey(boardKey, aiPolicy, 6);
     if (closest) {
       recommendations = aiPolicy[closest];
+      source = 'closest';
+      matchedKey = closest;
     }
   }
 
@@ -297,7 +303,7 @@ export const getAiMove = (boardKey, aiPolicy, computerMoves) => {
 
   for (const [row, col] of recommendations) {
     if (!computerMoves.some(move => move.row === row && move.col === col)) {
-      return { row, col };
+      return { row, col, source, key: matchedKey };
     }
   }
 

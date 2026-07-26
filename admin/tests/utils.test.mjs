@@ -106,10 +106,10 @@ test('getAiMove returns the next unshot coordinate from the ordered policy', () 
     ]
   };
   const move = getAiMove(boardKey, aiPolicy, []);
-  expect(move).toEqual({ row: 0, col: 1 });
+  expect(move).toEqual({ row: 0, col: 1, source: 'exact', key: boardKey });
 
   const moveAfterShot = getAiMove(boardKey, aiPolicy, [{ row: 0, col: 1, hit: true }]);
-  expect(moveAfterShot).toEqual({ row: 0, col: 2 });
+  expect(moveAfterShot).toEqual({ row: 0, col: 2, source: 'exact', key: boardKey });
 }, { component: 'AI policy', control: 'CC7.2' });
 
 test('getAiMove returns null for unknown or exhausted states', () => {

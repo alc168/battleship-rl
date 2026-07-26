@@ -32,7 +32,7 @@ API: `https://battleship-rl-api.battleship-rl.workers.dev`
 - The worker augments every recorded board state with its 7 symmetric rotations/reflections, multiplying effective training data by 8.
 - The results update the computer's shot-priority table, which is merged back to Cloudflare KV for the next game.
 - Every finished human game is recorded in Cloudflare D1, so the computer can learn which ship placements win.
-- A **Computer Tactical Console** shows live training logs, the last enemy decision, and a real-time probability heatmap.
+- A **Computer Tactical Console** shows live training logs, the computer's current "thinking", a real-time probability heatmap, and a personality dial from Pragmatic to Philosophical.
 
 ---
 
@@ -227,7 +227,7 @@ A dedicated test suite lives in `admin/`. It runs on demand, validates every com
 ### Latest results
 
 ```text
-30/30 passed in 9.01s
+30/30 passed in 7.83s
 0 failed, 0 skipped
 ```
 
