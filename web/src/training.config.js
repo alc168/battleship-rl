@@ -19,7 +19,8 @@ export const PRESETS = {
     PRUNE_STATES_THRESHOLD: 25000,  // start pruning when above this
     EXPLORATION_EPSILON: 0.25,      // cheaper because it explores more randomly
     MAX_WORKER_MS: 30000,           // allow longer chunks to reduce overhead
-    TRAINING_DELAY_MS: 1500,        // wait briefly after a game before training
+    TRAINING_DELAY_MS: 0,           // start training as soon as the game begins
+    CONTINUOUS_INTERVAL_MS: 5000,   // wait 5 seconds between continuous batches
     ENABLE_ON_MOBILE: false         // skip on mobile to save battery
   },
   EXPERIENCE_FIRST: {
@@ -32,7 +33,8 @@ export const PRESETS = {
     PRUNE_STATES_THRESHOLD: 120000,
     EXPLORATION_EPSILON: 0.10,
     MAX_WORKER_MS: 15000,
-    TRAINING_DELAY_MS: 500,
+    TRAINING_DELAY_MS: 0,
+    CONTINUOUS_INTERVAL_MS: 2000,
     ENABLE_ON_MOBILE: true
   }
 };

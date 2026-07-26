@@ -56,10 +56,25 @@ function App() {
   const isTraining = useRef(false);
   const weightMapRef = useRef(weightMap);
   const placementMemoryRef = useRef(placementMemory);
-  const lastTrainedFor = useRef(null);
+  const gamePhaseRef = useRef(gamePhase);
 
-  useEffect(() => { weightMapRef.current = weightMap; }, [weightMap]);
+  useEffect(() => {
+    weightMapRef.current = weightMap;
+    // If the game is already active when the weight map arrives, start training
+    if (weightMap && (gamePhaseRef.current === GAME_PHASES.PLAYING || gamePhaseRef.current === GAME_PHASES.GAME_OVER) && !isTraining.current) {
+      scheduleNextTraining();
+    }
+  }, [weightMap]);
+
   useEffect(() => { placementMemoryRef.current = placementMemory; }, [placementMemory]);
+  useEffect(() => { gamePhaseRef.current = gamePhase; }, [gamePhase]);
+
+  // Start continuous background training whenever a game is active or has just ended
+  useEffect(() => {
+    if (gamePhase !== GAME_PHASES.PLAYING && gamePhase !== GAME_PHASES.GAME_OVER) return;
+    if (!weightMapRef.current || isTraining.current) return;
+    scheduleNextTraining();
+  }, [gamePhase]);
 
   // Randomly place enemy ships and start the playing phase
   const startGame = useCallback(() => {
@@ -141,15 +156,9 @@ function App() {
       });
   }, []);
 
-  // After each finished game, record the human layout to D1 and trigger background training
+  // After each finished game, record the human layout to D1 and update local memory
   useEffect(() => {
-    // Reset training lock when a new game begins
-    if (!winner) {
-      lastTrainedFor.current = null;
-      return;
-    }
-
-    if (!playerShipPositions || playerShipPositions.length === 0) return;
+    if (!winner || !playerShipPositions || playerShipPositions.length === 0) return;
 
     const humanWon = winner === 'player';
     const layoutJson = JSON.stringify(playerShipPositions);
@@ -163,19 +172,6 @@ function App() {
 
     // Update local placement memory immediately for the next game
     setPlacementMemory(prev => updatePlacementMemory(prev, playerShipPositions, humanWon, 100));
-
-    // Trigger background training once per finished game, even if weightMap loaded after winner was set
-    if (weightMapRef.current && !isTraining.current && lastTrainedFor.current !== winner) {
-      const isMobile = /Mobi|Android/i.test(navigator.userAgent);
-      if (isMobile && !CONFIG.ENABLE_ON_MOBILE) return;
-
-      lastTrainedFor.current = winner;
-      isTraining.current = true;
-      console.log('Scheduling background training in', CONFIG.TRAINING_DELAY_MS, 'ms');
-      setTimeout(() => {
-        startTraining();
-      }, CONFIG.TRAINING_DELAY_MS);
-    }
   }, [winner, playerShipPositions]);
 
   // Initialize the training Web Worker once on mount
@@ -193,7 +189,9 @@ function App() {
       if (type === 'complete') {
         console.log(`Training complete: ${completed} games in ${elapsed?.toFixed?.(0)}ms`);
         if (delta && Object.keys(delta).length > 0) {
-          setWeightMap(prev => mergeWeightDelta(prev || {}, delta, 8));
+          const merged = mergeWeightDelta(weightMapRef.current || {}, delta, 8);
+          weightMapRef.current = merged;
+          setWeightMap(merged);
           fetch(`${API_BASE_URL}/api/merge-weights`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -204,6 +202,8 @@ function App() {
             .catch(err => console.error('Failed to merge weights:', err));
         }
         isTraining.current = false;
+        // Keep training continuously while the game is active
+        scheduleNextTraining(CONFIG.CONTINUOUS_INTERVAL_MS);
         return;
       }
 
@@ -417,18 +417,26 @@ function App() {
     setIsPlayerTurn(true);
   };
 
-  // Start a background self-play training batch in the Web Worker
-  function startTraining() {
-    if (!workerRef.current) {
-      console.error('Training worker is not initialized');
-      isTraining.current = false;
-      return;
-    }
-    console.log('Starting background training with', placementMemoryRef.current?.length || 0, 'placement patterns');
-    workerRef.current.postMessage({
-      weightMap: weightMapRef.current,
-      placementMemory: placementMemoryRef.current
-    });
+  // Queue the next training batch if the game is still active
+  function scheduleNextTraining(delay = CONFIG.TRAINING_DELAY_MS) {
+    if (isTraining.current) return;
+    if (!weightMapRef.current) return;
+    if (document.hidden) return;
+    if (gamePhaseRef.current !== GAME_PHASES.PLAYING && gamePhaseRef.current !== GAME_PHASES.GAME_OVER) return;
+
+    isTraining.current = true;
+    console.log('Scheduling background training in', delay, 'ms');
+    setTimeout(() => {
+      if (document.hidden || !workerRef.current) {
+        isTraining.current = false;
+        return;
+      }
+      console.log('Starting background training with', placementMemoryRef.current?.length || 0, 'placement patterns');
+      workerRef.current.postMessage({
+        weightMap: weightMapRef.current,
+        placementMemory: placementMemoryRef.current
+      });
+    }, delay);
   }
 
   const resetGame = () => {
