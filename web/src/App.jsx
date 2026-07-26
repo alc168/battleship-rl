@@ -147,7 +147,8 @@ function App() {
   const isMobile = useMobile();
 
   // Tactical console: info panel, logs, and last computer decision
-  const [showInfoPanel, setShowInfoPanel] = useState(!isMobile);
+  // Tactical console is open by default on all viewports
+  const [showInfoPanel, setShowInfoPanel] = useState(true);
   const [consoleLog, setConsoleLog] = useState([]);
   const [computerDecision, setComputerDecision] = useState(null);
   const [heatMap, setHeatMap] = useState(null);
@@ -156,6 +157,12 @@ function App() {
   const [humanGames, setHumanGames] = useState(0);
   const [syntheticGames, setSyntheticGames] = useState(0);
   const [knownStates, setKnownStates] = useState(0);
+
+  // Draggable game-over banner offset (mouse + touch)
+  const [bannerOffset, setBannerOffset] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const dragStartRef = useRef({ x: 0, y: 0, offsetX: 0, offsetY: 0 });
+
 
   const consoleFeedRef = useRef(null);
   const introPlayedRef = useRef(false);
@@ -167,6 +174,63 @@ function App() {
     const timestamp = new Date().toLocaleTimeString();
     setConsoleLog(prev => [...prev.slice(-99), `[${timestamp}] ${message}`]);
   }, []);
+
+  // Dragging the game-over banner so the final board layout can be inspected
+  const startBannerDrag = (clientX, clientY) => {
+    dragStartRef.current = {
+      x: clientX,
+      y: clientY,
+      offsetX: bannerOffset.x,
+      offsetY: bannerOffset.y
+    };
+    setIsDragging(true);
+  };
+
+  const handleBannerMouseDown = (e) => {
+    if (e.target.closest('button')) return;
+    startBannerDrag(e.clientX, e.clientY);
+  };
+
+  const handleBannerTouchStart = (e) => {
+    if (e.target.closest('button')) return;
+    const touch = e.touches[0];
+    startBannerDrag(touch.clientX, touch.clientY);
+  };
+
+  useEffect(() => {
+    if (!isDragging) return;
+
+    const handleMouseMove = (e) => {
+      setBannerOffset({
+        x: dragStartRef.current.offsetX + (e.clientX - dragStartRef.current.x),
+        y: dragStartRef.current.offsetY + (e.clientY - dragStartRef.current.y)
+      });
+    };
+
+    const handleMouseUp = () => setIsDragging(false);
+
+    const handleTouchMove = (e) => {
+      const touch = e.touches[0];
+      setBannerOffset({
+        x: dragStartRef.current.offsetX + (touch.clientX - dragStartRef.current.x),
+        y: dragStartRef.current.offsetY + (touch.clientY - dragStartRef.current.y)
+      });
+    };
+
+    const handleTouchEnd = () => setIsDragging(false);
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+    window.addEventListener('touchmove', handleTouchMove, { passive: false });
+    window.addEventListener('touchend', handleTouchEnd);
+
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+      window.removeEventListener('touchmove', handleTouchMove);
+      window.removeEventListener('touchend', handleTouchEnd);
+    };
+  }, [isDragging]);
 
   const fetchStats = useCallback(() => {
     fetch(`${API_BASE_URL}/api/stats`)
@@ -702,7 +766,9 @@ function App() {
       {gamePhase === GAME_PHASES.PLACEMENT && (
         <div className="text-center py-1">
           <span className="text-xs text-green-300 bg-gray-800/80 px-3 py-1 rounded border border-green-500/30 animate-pulse">
-            🎯 Place ships in Friendly Waters — R to rotate — Enter to randomize
+            {isMobile
+              ? '🎯 Place ships in Friendly Waters'
+              : '🎯 Place ships in Friendly Waters — R to rotate — Enter to randomize'}
           </span>
         </div>
       )}
@@ -837,7 +903,12 @@ function App() {
 
       {/* Win Screen Banner */}
       {gamePhase === GAME_PHASES.GAME_OVER && (
-        <div className="fixed top-16 left-1/2 -translate-x-1/2 z-50 w-auto max-w-lg">
+        <div
+          className="fixed top-16 left-1/2 z-50 w-auto max-w-lg cursor-move select-none"
+          style={{ transform: `translate(calc(-50% + ${bannerOffset.x}px), ${bannerOffset.y}px)` }}
+          onMouseDown={handleBannerMouseDown}
+          onTouchStart={handleBannerTouchStart}
+        >
           <div className="operations-panel rounded-2xl p-4 text-center border-2 border-green-500/50 shadow-2xl">
             <div className="flex items-center justify-center gap-3 mb-2">
               <span className="text-3xl">{winner === 'player' ? '🎉' : '💥'}</span>
