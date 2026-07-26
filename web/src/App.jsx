@@ -141,6 +141,7 @@ function App() {
 
   // Web Worker reference for background training
   const workerRef = useRef(null);
+  const consoleFeedRef = useRef(null);
   const isTraining = useRef(false);
   const weightMapRef = useRef(weightMap);
   const placementMemoryRef = useRef(placementMemory);
@@ -177,6 +178,13 @@ function App() {
   useEffect(() => {
     setKnownStates(weightMap ? Object.keys(weightMap).length : 0);
   }, [weightMap]);
+
+  // Keep the console scrolled to the top (latest message visible)
+  useEffect(() => {
+    if (consoleFeedRef.current) {
+      consoleFeedRef.current.scrollTop = 0;
+    }
+  }, [consoleLog]);
 
   // Randomly place enemy ships and start the playing phase
   const startGame = useCallback(() => {
@@ -900,13 +908,14 @@ function App() {
             {/* Live console feed */}
             <div className="info-section">
               <div className="info-section-title">Training &amp; Event Log</div>
-              <div className="console-feed">
+              <div ref={consoleFeedRef} className="console-feed">
                 {consoleLog.length === 0 ? (
                   <div className="text-cyan-600/60 text-xs italic">Awaiting telemetry...</div>
                 ) : (
-                  consoleLog.map((line, i) => (
-                    <div key={`log-${i}`} className="console-line">{line}</div>
-                  ))
+                  [...consoleLog].reverse().map((line, i) => {
+                    const originalIndex = consoleLog.length - 1 - i;
+                    return <div key={`log-${originalIndex}`} className="console-line">{line}</div>;
+                  })
                 )}
               </div>
             </div>
