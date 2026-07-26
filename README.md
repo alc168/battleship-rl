@@ -2,7 +2,7 @@
 
 A browser-based Battleship game where a human plays against a computer opponent. The computer learns from every human game and from continuous self-play, storing what it learns in Cloudflare D1 and KV behind a Cloudflare Worker API.
 
-Live game: `https://alc168.github.io/battleship-rl/`  
+Live game: `https://alc168.github.io/battleships-rl/`  
 API: `https://battleship-rl-api.battleship-rl.workers.dev`
 
 ---

@@ -3,7 +3,7 @@
   "private": true,
   "version": "1.0.0-a",
   "type": "module",
-  "homepage": "https://alc168.github.io/battleship-rl/",
+  "homepage": "https://alc168.github.io/battleships-rl/",
   "scripts": {
     "dev": "vite",
     "build": "vite build",

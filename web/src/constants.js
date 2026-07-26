@@ -26,4 +26,4 @@ export const ORIENTATIONS = {
   VERTICAL: 'vertical',
 };
 
-export const APP_VERSION = '1.0a';
+export const APP_VERSION = '1.01a';

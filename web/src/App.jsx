@@ -142,13 +142,7 @@ function App() {
   // Web Worker reference for background training
   const workerRef = useRef(null);
   const consoleFeedRef = useRef(null);
-  const shipExplosionRef = useRef(null);
-  const sunkAudioRef = useRef(null);
-  const wellDoneAudioRef = useRef(null);
-  const introAudioRef = useRef(null);
   const introPlayedRef = useRef(false);
-  const prevPlayerSunkRef = useRef([]);
-  const prevComputerSunkRef = useRef([]);
   const isTraining = useRef(false);
   const weightMapRef = useRef(weightMap);
   const placementMemoryRef = useRef(placementMemory);
@@ -165,46 +159,14 @@ function App() {
   useEffect(() => { placementMemoryRef.current = placementMemory; }, [placementMemory]);
   useEffect(() => { gamePhaseRef.current = gamePhase; }, [gamePhase]);
 
-  // Initialise audio effects once on mount
-  useEffect(() => {
+  // Create and play a sound, using the Vite base URL so paths work on GitHub Pages
+  const playSound = useCallback((filename) => {
     const base = import.meta.env.BASE_URL || '/';
-    shipExplosionRef.current = new Audio(`${base}ship-exploding.mp3`);
-    sunkAudioRef.current = new Audio(`${base}sunk.mp3`);
-    wellDoneAudioRef.current = new Audio(`${base}welldoneadmiral.mp3`);
-    introAudioRef.current = new Audio(`${base}battleshipsintro.mp3`);
+    const audio = new Audio(`${base}${filename}`);
+    audio.play().catch((err) => {
+      console.warn('Audio play failed:', filename, err.message);
+    });
   }, []);
-
-  // Play win/loss sounds
-  useEffect(() => {
-    if (winner === 'computer') {
-      sunkAudioRef.current?.play().catch(() => {});
-    } else if (winner === 'player') {
-      wellDoneAudioRef.current?.play().catch(() => {});
-    }
-  }, [winner]);
-
-  // Play intro once when the player reaches the placement phase
-  useEffect(() => {
-    if (gamePhase === GAME_PHASES.PLACEMENT && !introPlayedRef.current && introAudioRef.current) {
-      introAudioRef.current.play().catch(() => {});
-      introPlayedRef.current = true;
-    }
-  }, [gamePhase]);
-
-  // Play ship explosion whenever a new ship is sunk
-  useEffect(() => {
-    if (playerSunkShips.length > prevPlayerSunkRef.current.length) {
-      shipExplosionRef.current?.play().catch(() => {});
-    }
-    prevPlayerSunkRef.current = playerSunkShips;
-  }, [playerSunkShips]);
-
-  useEffect(() => {
-    if (computerSunkShips.length > prevComputerSunkRef.current.length) {
-      shipExplosionRef.current?.play().catch(() => {});
-    }
-    prevComputerSunkRef.current = computerSunkShips;
-  }, [computerSunkShips]);
 
   const addLog = useCallback((message) => {
     const timestamp = new Date().toLocaleTimeString();
@@ -274,6 +236,11 @@ function App() {
 
   // Randomly place any ships not yet deployed, then start the game
   const handleRandomPlacement = useCallback(() => {
+    if (!introPlayedRef.current) {
+      playSound('battleshipsintro.mp3');
+      introPlayedRef.current = true;
+    }
+
     const result = placeRemainingShipsRandomly(playerGrid, playerShipPositions, currentShipIndex);
     setPlayerGrid(result.grid);
     setPlayerShipPositions(result.shipPositions);
@@ -286,7 +253,7 @@ function App() {
     }
 
     startGame();
-  }, [playerGrid, playerShipPositions, currentShipIndex, startGame, addLog]);
+  }, [playerGrid, playerShipPositions, currentShipIndex, startGame, addLog, playSound]);
 
   // Keyboard shortcuts: R rotates orientation, Enter randomly places remaining ships
   useEffect(() => {
@@ -425,6 +392,11 @@ function App() {
 
   // Route grid clicks to placement or attack handlers based on game phase
   const handleCellClick = (row, col) => {
+    if (!introPlayedRef.current) {
+      playSound('battleshipsintro.mp3');
+      introPlayedRef.current = true;
+    }
+
     if (gamePhase === GAME_PHASES.PLACEMENT) {
       handlePlacement(row, col);
     } else if (gamePhase === GAME_PHASES.PLAYING && isPlayerTurn) {
@@ -467,9 +439,13 @@ function App() {
 
     // Check for newly sunk ships using updated moves (including this hit)
     const newSunkShips = checkSunkShips(computerShipPositions, updatedMoves);
+    if (newSunkShips.length > computerSunkShips.length) {
+      playSound('ship-exploding.mp3');
+    }
     setComputerSunkShips(newSunkShips);
 
     if (checkWinCondition(newComputerGrid)) {
+      playSound('welldoneadmiral.mp3');
       setWinner('player');
       setGamePhase(GAME_PHASES.GAME_OVER);
       return;
@@ -639,6 +615,9 @@ function App() {
 
     // Determine which ships are sunk before deciding whether to keep hunting
     const newSunkShips = checkSunkShips(playerShipPositions, updatedMoves);
+    if (newSunkShips.length > playerSunkShips.length) {
+      playSound('ship-exploding.mp3');
+    }
     setPlayerSunkShips(newSunkShips);
 
     // Only add new hunt targets if this hit did not finish off a ship
@@ -667,6 +646,7 @@ function App() {
     })));
 
     if (checkWinCondition(newPlayerGrid)) {
+      playSound('sunk.mp3');
       setWinner('computer');
       setGamePhase(GAME_PHASES.GAME_OVER);
       return;
