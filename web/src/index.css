@@ -1,0 +1,301 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-gray-900 overflow-hidden;
+  }
+}
+
+@layer components {
+  .operations-room {
+    @apply bg-gradient-to-br from-gray-900 via-green-950 to-gray-900;
+    background-image: 
+      radial-gradient(circle at 20% 80%, rgba(34, 197, 94, 0.1) 0%, transparent 50%),
+      radial-gradient(circle at 80% 20%, rgba(34, 197, 94, 0.05) 0%, transparent 50%);
+  }
+
+  .radar-grid {
+    @apply bg-green-950/30 border-green-500/30;
+    background-image: 
+      linear-gradient(rgba(34, 197, 94, 0.1) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(34, 197, 94, 0.1) 1px, transparent 1px);
+    background-size: 20px 20px;
+    box-shadow: 
+      0 0 30px rgba(34, 197, 94, 0.2),
+      inset 0 0 50px rgba(34, 197, 94, 0.1);
+  }
+
+  .tactical-cell {
+    @apply bg-green-950/40 border-green-600/30;
+    transition: all 0.2s ease;
+    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.3);
+    position: relative;
+    z-index: 10;
+    pointer-events: auto;
+  }
+
+  .tactical-cell:hover {
+    @apply bg-green-900/50 border-green-500/50;
+    box-shadow: 
+      inset 0 1px 3px rgba(0, 0, 0, 0.3),
+      0 0 10px rgba(34, 197, 94, 0.3);
+  }
+
+  .ship-cell {
+    @apply bg-gradient-to-br from-gray-600 to-gray-800 border-gray-500;
+    box-shadow: 
+      inset 0 2px 4px rgba(0, 0, 0, 0.4),
+      0 1px 2px rgba(255, 255, 255, 0.1);
+    position: relative;
+    z-index: 10;
+  }
+
+  .enemy-ship-revealed {
+    @apply bg-gradient-to-br from-blue-700 to-blue-900 border-blue-500;
+    box-shadow: 
+      inset 0 2px 4px rgba(0, 0, 0, 0.4),
+      0 0 10px rgba(59, 130, 246, 0.4);
+    position: relative;
+    z-index: 10;
+  }
+
+  .hit-cell {
+    @apply bg-gradient-to-br from-red-600 to-red-800 border-red-500;
+    animation: hitFlash 0.3s ease-out;
+    box-shadow: 
+      0 0 15px rgba(239, 68, 68, 0.6),
+      inset 0 0 8px rgba(239, 68, 68, 0.4);
+    position: relative;
+    z-index: 10;
+  }
+
+  .miss-cell {
+    @apply bg-gradient-to-br from-yellow-500 to-orange-500 border-yellow-400;
+    animation: splash 0.4s ease-out;
+    box-shadow: 
+      0 0 12px rgba(234, 179, 8, 0.5),
+      inset 0 0 6px rgba(234, 179, 8, 0.3);
+    position: relative;
+    z-index: 10;
+  }
+
+  .skull-icon {
+    @apply text-red-500 font-bold text-xs;
+    animation: skullPulse 1s ease-in-out infinite;
+  }
+
+  @keyframes skullPulse {
+    0%, 100% {
+      opacity: 1;
+      transform: scale(1);
+    }
+    50% {
+      opacity: 0.7;
+      transform: scale(1.1);
+    }
+  }
+
+  .sunk-cell {
+    @apply bg-gradient-to-br from-red-900 to-gray-900 border-red-700;
+    animation: sunkRadar 2s ease-in-out infinite;
+    box-shadow: 
+      0 0 20px rgba(239, 68, 68, 0.4),
+      inset 0 0 10px rgba(239, 68, 68, 0.2);
+  }
+
+  .operations-panel {
+    @apply bg-gray-800/80 backdrop-blur-sm border border-green-500/30;
+    box-shadow: 
+      0 4px 20px rgba(0, 0, 0, 0.5),
+      inset 0 1px 0 rgba(34, 197, 94, 0.1);
+  }
+
+  .tactical-button {
+    @apply bg-gradient-to-r from-green-700 to-green-800 hover:from-green-600 hover:to-green-700;
+    @apply text-green-100 font-medium shadow-lg;
+    @apply transition-all duration-200;
+    box-shadow: 
+      0 2px 10px rgba(34, 197, 94, 0.3),
+      inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  }
+
+  .tactical-button:hover {
+    box-shadow: 
+      0 4px 15px rgba(34, 197, 94, 0.4),
+      inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  }
+
+  .radar-sweep {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    background: conic-gradient(
+      from 0deg,
+      transparent 0deg,
+      rgba(34, 197, 94, 0.35) 50deg,
+      transparent 50deg
+    );
+    animation: radarSpin 2s linear infinite;
+    border-radius: inherit;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .radar-glow {
+    animation: radarGlow 2.5s ease-in-out infinite;
+  }
+
+  .radar-glow-sunk {
+    animation: radarGlowRed 2.5s ease-in-out infinite;
+  }
+
+  .radar-blip {
+    animation: blip 1.5s ease-in-out infinite;
+  }
+
+  @keyframes hitFlash {
+    0% {
+      transform: scale(1);
+      filter: brightness(1);
+    }
+    50% {
+      transform: scale(1.1);
+      filter: brightness(1.5);
+    }
+    100% {
+      transform: scale(1);
+      filter: brightness(1);
+    }
+  }
+
+  @keyframes splash {
+    0% {
+      transform: scale(0.5);
+      opacity: 0.5;
+    }
+    100% {
+      transform: scale(1);
+      opacity: 1;
+    }
+  }
+
+  @keyframes sunkRadar {
+    0%, 100% {
+      box-shadow: 
+        0 0 15px rgba(239, 68, 68, 0.4),
+        inset 0 0 8px rgba(239, 68, 68, 0.2);
+    }
+    50% {
+      box-shadow: 
+        0 0 25px rgba(239, 68, 68, 0.6),
+        inset 0 0 12px rgba(239, 68, 68, 0.3);
+    }
+  }
+
+  @keyframes radarSpin {
+    0% {
+      transform: rotate(0deg);
+    }
+    100% {
+      transform: rotate(360deg);
+    }
+  }
+
+  @keyframes blip {
+    0%, 100% {
+      opacity: 1;
+      transform: scale(1);
+    }
+    50% {
+      opacity: 0.7;
+      transform: scale(1.1);
+    }
+  }
+
+  @keyframes radarGlow {
+    0% {
+      box-shadow: inset 0 0 0 0 rgba(34, 197, 94, 0);
+      filter: brightness(1);
+    }
+    15% {
+      box-shadow: inset 0 0 10px 3px rgba(34, 197, 94, 0.6);
+      filter: brightness(1.4);
+    }
+    40% {
+      box-shadow: inset 0 0 5px 1px rgba(34, 197, 94, 0.3);
+      filter: brightness(1.15);
+    }
+    80% {
+      box-shadow: inset 0 0 2px 1px rgba(34, 197, 94, 0.15);
+      filter: brightness(1.05);
+    }
+    100% {
+      box-shadow: inset 0 0 0 0 rgba(34, 197, 94, 0);
+      filter: brightness(1);
+    }
+  }
+
+  @keyframes radarGlowRed {
+    0% {
+      box-shadow: inset 0 0 0 0 rgba(239, 68, 68, 0);
+      filter: brightness(1);
+    }
+    15% {
+      box-shadow: inset 0 0 10px 3px rgba(239, 68, 68, 0.6);
+      filter: brightness(1.4);
+    }
+    40% {
+      box-shadow: inset 0 0 5px 1px rgba(239, 68, 68, 0.3);
+      filter: brightness(1.15);
+    }
+    80% {
+      box-shadow: inset 0 0 2px 1px rgba(239, 68, 68, 0.15);
+      filter: brightness(1.05);
+    }
+    100% {
+      box-shadow: inset 0 0 0 0 rgba(239, 68, 68, 0);
+      filter: brightness(1);
+    }
+  }
+
+  .ship-status-compact {
+    @apply flex items-center gap-2 px-2 py-1 rounded text-xs;
+    @apply bg-gray-800/50 border border-gray-600/30;
+    transition: all 0.2s ease;
+  }
+
+  .ship-status-compact.pending {
+    @apply border-yellow-600/50 text-yellow-400;
+  }
+
+  .ship-status-compact.operational {
+    @apply border-green-600/50 text-green-400;
+  }
+
+  .ship-status-compact.sunk {
+    @apply border-red-600/50 text-red-400 opacity-60;
+  }
+
+  .coordinate-label {
+    @apply text-xs font-mono text-green-400/60 font-bold;
+  }
+
+  .screen-fit {
+    @apply h-screen p-4 flex flex-col;
+  }
+
+  .game-area {
+    @apply flex-1 flex flex-col-reverse md:flex-row items-center justify-center gap-4 md:gap-6 overflow-y-auto md:overflow-visible;
+  }
+
+  .status-bar {
+    @apply h-16 flex items-center justify-between px-4;
+    @apply operations-panel rounded-lg;
+  }
+
+  .header-compact {
+    @apply text-center py-2;
+  }
+}

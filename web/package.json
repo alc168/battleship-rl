@@ -1,0 +1,31 @@
+{
+  "name": "battleship-rl-web",
+  "private": true,
+  "version": "2.0.0",
+  "type": "module",
+  "homepage": "https://alc168.github.io/battleship-rl/",
+  "scripts": {
+    "dev": "vite",
+    "copy:policy": "cp ../ai_policy.json public/ai_policy.json 2>/dev/null || true",
+    "prebuild": "npm run copy:policy",
+    "build": "vite build",
+    "predeploy": "npm run copy:policy",
+    "preview": "vite preview",
+    "deploy": "vite build && gh-pages -d dist"
+  },
+  "dependencies": {
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.3",
+    "autoprefixer": "^10.5.4",
+    "gh-pages": "^6.3.0",
+    "oxlint": "^1.71.0",
+    "postcss": "^8.5.23",
+    "tailwindcss": "^3.4.19",
+    "vite": "^8.1.1"
+  }
+}
