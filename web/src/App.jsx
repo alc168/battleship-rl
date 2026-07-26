@@ -56,6 +56,7 @@ function App() {
   const isTraining = useRef(false);
   const weightMapRef = useRef(weightMap);
   const placementMemoryRef = useRef(placementMemory);
+  const lastTrainedFor = useRef(null);
 
   useEffect(() => { weightMapRef.current = weightMap; }, [weightMap]);
   useEffect(() => { placementMemoryRef.current = placementMemory; }, [placementMemory]);
@@ -142,7 +143,14 @@ function App() {
 
   // After each finished game, record the human layout to D1 and trigger background training
   useEffect(() => {
-    if (!winner || !playerShipPositions || playerShipPositions.length === 0) return;
+    // Reset training lock when a new game begins
+    if (!winner) {
+      lastTrainedFor.current = null;
+      return;
+    }
+
+    if (!playerShipPositions || playerShipPositions.length === 0) return;
+
     const humanWon = winner === 'player';
     const layoutJson = JSON.stringify(playerShipPositions);
 
@@ -156,12 +164,14 @@ function App() {
     // Update local placement memory immediately for the next game
     setPlacementMemory(prev => updatePlacementMemory(prev, playerShipPositions, humanWon, 100));
 
-    // Trigger background training when appropriate
-    if (weightMapRef.current && !isTraining.current) {
+    // Trigger background training once per finished game, even if weightMap loaded after winner was set
+    if (weightMapRef.current && !isTraining.current && lastTrainedFor.current !== winner) {
       const isMobile = /Mobi|Android/i.test(navigator.userAgent);
       if (isMobile && !CONFIG.ENABLE_ON_MOBILE) return;
 
+      lastTrainedFor.current = winner;
       isTraining.current = true;
+      console.log('Scheduling background training in', CONFIG.TRAINING_DELAY_MS, 'ms');
       setTimeout(() => {
         startTraining();
       }, CONFIG.TRAINING_DELAY_MS);
@@ -403,7 +413,12 @@ function App() {
 
   // Start a background self-play training batch in the Web Worker
   function startTraining() {
-    if (!workerRef.current) return;
+    if (!workerRef.current) {
+      console.error('Training worker is not initialized');
+      isTraining.current = false;
+      return;
+    }
+    console.log('Starting background training with', placementMemoryRef.current?.length || 0, 'placement patterns');
     workerRef.current.postMessage({
       weightMap: weightMapRef.current,
       placementMemory: placementMemoryRef.current

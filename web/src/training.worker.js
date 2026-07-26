@@ -114,6 +114,7 @@ function buildDelta(games, weightMap, placementMemory) {
 
 self.onmessage = (event) => {
   const { weightMap, placementMemory } = event.data;
+  console.log('Training worker starting', CONFIG.GAMES_PER_BATCH, 'games');
   const start = performance.now();
   const delta = buildDelta(CONFIG.GAMES_PER_BATCH, weightMap, placementMemory);
   const elapsed = performance.now() - start;
