@@ -4,6 +4,7 @@ import { loadDotenv, run } from './lib/harness.mjs';
 loadDotenv();
 
 await import('./tests/utils.test.mjs');
+await import('./tests/utils-coverage.test.mjs');
 await import('./tests/training.test.mjs');
 await import('./tests/api.test.mjs');
 await import('./tests/security.test.mjs');
