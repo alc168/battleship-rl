@@ -10,8 +10,8 @@
 
 export const PRESETS = {
   COST_FIRST: {
-    GAMES_PER_BATCH: 250,           // completes in a few seconds; still one KV write per batch
-    CHUNK_SIZE: 25,                 // report progress every 25 games
+    GAMES_PER_BATCH: 500,           // larger batch; one KV write per batch
+    CHUNK_SIZE: 50,                 // report progress every 50 games
     UPLOAD_INTERVAL_BATCHES: 1,     // one API write per completed batch
     MAX_ACTIONS_PER_STATE: 5,       // keep KV value small
     MIN_SAMPLES_PER_ACTION: 10,     // ignore rarely-seen actions
