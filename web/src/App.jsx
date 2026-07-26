@@ -6,12 +6,15 @@ import {
   placeShipWithTracking,
   processAttack, 
   checkWinCondition,
-  placeShipsRandomlyWithTracking,
   placeRemainingShipsRandomly,
   getRandomPosition,
   checkSunkShips,
   getBoardKey,
-  getAiMove
+  getAiMove,
+  seedPlacementMemory,
+  selectPlacementPattern,
+  applyPlacementPattern,
+  updatePlacementMemory
 } from './utils.js';
 import './index.css';
 
@@ -42,13 +45,22 @@ function App() {
   // Loaded Teacher policy lookup table
   const [aiPolicy, setAiPolicy] = useState(null);
 
+  // Memory of human ship placements; used to choose computer placements
+  const [placementMemory, setPlacementMemory] = useState([]);
+
   // Randomly place enemy ships and start the playing phase
   const startGame = useCallback(() => {
-    const result = placeShipsRandomlyWithTracking(createEmptyGrid());
+    let pattern = selectPlacementPattern(placementMemory);
+    if (!pattern) {
+      // Should only happen before memory is seeded; generate a fresh random fallback
+      const fallback = seedPlacementMemory(1);
+      pattern = fallback[0]?.pattern || [];
+    }
+    const result = applyPlacementPattern(pattern);
     setComputerGrid(result.grid);
     setComputerShipPositions(result.shipPositions);
     setGamePhase(GAME_PHASES.PLAYING);
-  }, []);
+  }, [placementMemory]);
 
   // Randomly place any ships not yet deployed, then start the game
   const handleRandomPlacement = useCallback(() => {
@@ -96,6 +108,38 @@ function App() {
         console.error('Could not load ai_policy.json, using fallback AI:', error);
       });
   }, []);
+
+  // Load placement memory from localStorage, or seed with 100 random placements
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem('battleshipPlacementMemory');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        setPlacementMemory(parsed);
+        console.log('Loaded placement memory:', parsed.length, 'patterns');
+      } else {
+        const seeded = seedPlacementMemory(100);
+        setPlacementMemory(seeded);
+        localStorage.setItem('battleshipPlacementMemory', JSON.stringify(seeded));
+        console.log('Seeded placement memory with', seeded.length, 'random patterns');
+      }
+    } catch (error) {
+      console.error('Failed to load placement memory:', error);
+      const seeded = seedPlacementMemory(100);
+      setPlacementMemory(seeded);
+    }
+  }, []);
+
+  // After each finished game, rerank placement memory using the human's layout
+  useEffect(() => {
+    if (!winner || !playerShipPositions || playerShipPositions.length === 0) return;
+    const humanWon = winner === 'player';
+    setPlacementMemory(prev => {
+      const next = updatePlacementMemory(prev, playerShipPositions, humanWon, 100);
+      localStorage.setItem('battleshipPlacementMemory', JSON.stringify(next));
+      return next;
+    });
+  }, [winner, playerShipPositions]);
 
   // Route grid clicks to placement or attack handlers based on game phase
   const handleCellClick = (row, col) => {

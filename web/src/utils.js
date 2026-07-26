@@ -257,3 +257,81 @@ export const getAiMove = (boardKey, aiPolicy, computerMoves) => {
 
   return null;
 };
+
+
+// ----------------------------- PLACEMENT MEMORY HELPERS ----------------------------- #
+
+const patternKey = (pattern) => JSON.stringify(pattern);
+
+export const generateRandomPlacementPattern = (maxAttempts = 1000) => {
+  for (let i = 0; i < maxAttempts; i++) {
+    const result = placeShipsRandomlyWithTracking(createEmptyGrid());
+    if (result.shipPositions.length === SHIPS.length) {
+      return result.shipPositions;
+    }
+  }
+  return null;
+};
+
+export const seedPlacementMemory = (count = 100) => {
+  const memory = [];
+  for (let i = 0; i < count; i++) {
+    const pattern = generateRandomPlacementPattern();
+    if (pattern) {
+      memory.push({ pattern, wins: 0, games: 0, score: 0 });
+    }
+  }
+  return memory;
+};
+
+export const getTopPlacementPatterns = (memory, n = 3) => {
+  if (!memory || memory.length === 0) return [];
+  return [...memory].sort((a, b) => b.score - a.score).slice(0, n);
+};
+
+export const selectPlacementPattern = (memory) => {
+  const top = getTopPlacementPatterns(memory, 3);
+  if (top.length === 0) return null;
+  const entry = top[Math.floor(Math.random() * top.length)];
+  return entry.pattern;
+};
+
+export const applyPlacementPattern = (pattern) => {
+  const grid = createEmptyGrid();
+  for (const ship of pattern) {
+    for (const pos of ship.positions) {
+      grid[pos.row][pos.col] = CELL_STATES.SHIP;
+    }
+  }
+  return { grid, shipPositions: pattern };
+};
+
+export const updatePlacementMemory = (memory, humanPlacement, humanWon, maxSize = 100) => {
+  const key = patternKey(humanPlacement);
+  let next = memory ? [...memory] : [];
+  const index = next.findIndex(entry => patternKey(entry.pattern) === key);
+
+  // Base score 1 for any human placement; +1 extra for each win
+  if (index >= 0) {
+    const entry = next[index];
+    next[index] = {
+      ...entry,
+      games: entry.games + 1,
+      wins: entry.wins + (humanWon ? 1 : 0),
+      score: entry.score + (humanWon ? 1 : 0)
+    };
+  } else {
+    next.unshift({
+      pattern: humanPlacement,
+      games: 1,
+      wins: humanWon ? 1 : 0,
+      score: humanWon ? 2 : 1
+    });
+  }
+
+  if (next.length > maxSize) {
+    next = next.slice(0, maxSize);
+  }
+
+  return next;
+};
