@@ -355,27 +355,45 @@ function App() {
       col = target.col;
       setComputerHuntTargets(validTargets.slice(1));
     } else {
-      // No hunt targets: ask the trained Teacher for a move
-      const boardKey = getBoardKey(computerMoves, playerShipPositions, playerSunkShips);
-      const aiMove = getAiMove(boardKey, weightMap, computerMoves);
+      // No queued hunt targets. If there are unsunk hits, prioritise sinking that ship over the weight map.
+      const recentHits = computerMoves.filter(move => move.hit && !isCellOfSunkShip(false, move.row, move.col));
+      let fallbackTarget = null;
 
-      if (aiMove) {
-        row = aiMove.row;
-        col = aiMove.col;
-      } else {
-        // Teacher has no recommendation for this state; fall back to random
-        let validMove = false;
-        while (!validMove) {
-          const position = getRandomPosition();
-          row = position.row;
-          col = position.col;
-          
-          if (!computerMoves.some(move => move.row === row && move.col === col)) {
-            validMove = true;
-          }
+      if (recentHits.length > 0) {
+        const lastHit = recentHits[recentHits.length - 1];
+        const fallbackTargets = getHuntDirectionTargets(lastHit.row, lastHit.col)
+          .filter(t => !computerMoves.some(move => move.row === t.row && move.col === t.col));
+        fallbackTarget = fallbackTargets[0] || null;
+        if (fallbackTarget) {
+          row = fallbackTarget.row;
+          col = fallbackTarget.col;
+          setComputerHuntTargets(fallbackTargets.slice(1));
         }
       }
-      setComputerHuntTargets([]);
+
+      if (!fallbackTarget) {
+        // No unsunk ship to hunt: ask the trained weight map for a move
+        const boardKey = getBoardKey(computerMoves, playerShipPositions, playerSunkShips);
+        const aiMove = getAiMove(boardKey, weightMap, computerMoves);
+
+        if (aiMove) {
+          row = aiMove.row;
+          col = aiMove.col;
+        } else {
+          // Weight map has no recommendation for this state; fall back to random
+          let validMove = false;
+          while (!validMove) {
+            const position = getRandomPosition();
+            row = position.row;
+            col = position.col;
+
+            if (!computerMoves.some(move => move.row === row && move.col === col)) {
+              validMove = true;
+            }
+          }
+        }
+        setComputerHuntTargets([]);
+      }
     }
 
     const { grid: newPlayerGrid, hit } = processAttack(playerGrid, row, col);
