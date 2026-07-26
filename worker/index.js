@@ -58,7 +58,11 @@ function error(message, status = 400, extraHeaders = {}) {
 }
 
 function getClientIp(request) {
-  return request.headers.get('CF-Connecting-IP') || 'unknown';
+  const cf = request.headers.get('CF-Connecting-IP');
+  if (cf) return cf;
+  const xff = request.headers.get('X-Forwarded-For');
+  if (xff) return xff.split(',')[0].trim();
+  return 'unknown';
 }
 
 function checkApiKey(request, env) {

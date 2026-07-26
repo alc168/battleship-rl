@@ -6,7 +6,12 @@ const API_KEY = getEnv('API_KEY', '');
 const json = (path, opts = {}) => fetch(`${API_BASE_URL}${path}`, opts).then(r => r.json());
 const status = (path, opts = {}) => fetch(`${API_BASE_URL}${path}`, opts).then(r => r.status);
 
-const commonHeaders = API_KEY ? { 'X-API-Key': API_KEY } : {};
+function apiHeaders(ip, includeKey = true) {
+  const headers = { 'Content-Type': 'application/json' };
+  if (includeKey && API_KEY) headers['X-API-Key'] = API_KEY;
+  if (ip) headers['X-Forwarded-For'] = ip;
+  return headers;
+}
 
 function authTest(name, fn, options) {
   if (!API_KEY) {
@@ -42,7 +47,7 @@ test('GET /api/stats returns numeric counts', async () => {
 authTest('POST /api/record without API key returns 401', async () => {
   const res = await fetch(`${API_BASE_URL}/api/record`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: apiHeaders('203.0.113.1', false),
     body: JSON.stringify({ layout_json: '[]', win: true })
   });
   expect(res.status).toBe(401);
@@ -52,7 +57,7 @@ authTest('POST /api/record with valid payload returns 200', async () => {
   const layout = JSON.stringify([{ name: 'TestCarrier', positions: [{ row: 0, col: 0 }] }]);
   const res = await fetch(`${API_BASE_URL}/api/record`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...commonHeaders },
+    headers: apiHeaders('203.0.113.2'),
     body: JSON.stringify({ layout_json: layout, win: false })
   });
   expect(res.status).toBe(200);
@@ -63,7 +68,7 @@ authTest('POST /api/record with valid payload returns 200', async () => {
 authTest('POST /api/record rejects invalid win type', async () => {
   const res = await fetch(`${API_BASE_URL}/api/record`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...commonHeaders },
+    headers: apiHeaders('203.0.113.3'),
     body: JSON.stringify({ layout_json: '[]', win: 'yes' })
   });
   expect(res.status).toBe(400);
@@ -73,7 +78,7 @@ authTest('POST /api/record rejects oversized layout_json', async () => {
   const huge = 'x'.repeat(3000);
   const res = await fetch(`${API_BASE_URL}/api/record`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...commonHeaders },
+    headers: apiHeaders('203.0.113.4'),
     body: JSON.stringify({ layout_json: huge, win: true })
   });
   expect(res.status).toBe(400);
@@ -82,7 +87,7 @@ authTest('POST /api/record rejects oversized layout_json', async () => {
 authTest('POST /api/merge-weights without API key returns 401', async () => {
   const res = await fetch(`${API_BASE_URL}/api/merge-weights`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: apiHeaders('203.0.113.5', false),
     body: JSON.stringify({ delta: {} })
   });
   expect(res.status).toBe(401);
@@ -91,7 +96,7 @@ authTest('POST /api/merge-weights without API key returns 401', async () => {
 authTest('POST /api/merge-weights rejects an invalid delta', async () => {
   const res = await fetch(`${API_BASE_URL}/api/merge-weights`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...commonHeaders },
+    headers: apiHeaders('203.0.113.6'),
     body: JSON.stringify({ delta: { bad: 'value' } })
   });
   expect(res.status).toBe(400);
@@ -99,10 +104,10 @@ authTest('POST /api/merge-weights rejects an invalid delta', async () => {
 
 authTest('POST /api/merge-weights accepts a valid delta and updates weight map', async () => {
   const stateKey = '0'.repeat(100);
-  const delta = { [stateKey]: [[0, 0, 1, 1]] };
+  const delta = { [stateKey]: [[0, 0, 2, 3]] }; // wins=2, samples=3 (meets MIN_SAMPLES=3)
   const res = await fetch(`${API_BASE_URL}/api/merge-weights`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...commonHeaders },
+    headers: apiHeaders('203.0.113.7'),
     body: JSON.stringify({ delta })
   });
   expect(res.status).toBe(200);
@@ -117,7 +122,7 @@ authTest('Rate limiting blocks excessive write requests from one IP', async () =
   for (let i = 0; i < 35; i++) {
     const s = await status('/api/record', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...commonHeaders },
+      headers: apiHeaders('203.0.113.99'),
       body: payload
     });
     statuses.push(s);

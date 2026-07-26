@@ -68,7 +68,7 @@ export function expect(actual) {
   };
 }
 
-function loadDotenv() {
+export function loadDotenv() {
   const envPath = join(__dirname, '..', '.env');
   if (!existsSync(envPath)) return;
   const content = readFileSync(envPath, 'utf8');
