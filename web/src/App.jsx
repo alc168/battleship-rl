@@ -669,7 +669,7 @@ function App() {
     })));
 
     if (checkWinCondition(newPlayerGrid)) {
-      playSound('sunk.mp3');
+      playSound('sunkbattleships.mp3');
       setWinner('computer');
       setGamePhase(GAME_PHASES.GAME_OVER);
       return;
@@ -1049,7 +1049,14 @@ function App() {
             className="tactical-button px-3 py-1 rounded text-xs"
             aria-label={soundOn ? 'Turn sound off' : 'Turn sound on'}
           >
-            {soundOn ? '🔊' : '🔇'}
+            {soundOn ? (
+              '🔊'
+            ) : (
+              <span className="relative inline-block">
+                <span>🔊</span>
+                <span className="absolute inset-0 flex items-center justify-center text-red-500 text-base leading-none pointer-events-none">�</span>
+              </span>
+            )}
           </button>
           <button
             onClick={() => setShowInfoPanel(prev => !prev)}
