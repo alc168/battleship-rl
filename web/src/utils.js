@@ -425,3 +425,68 @@ export const mergeWeightDelta = (existing, delta, maxActions = 8) => {
 
   return merged;
 };
+
+// ----------------------------- ARTISTIC PLACEMENT SHAPES ----------------------------- #
+
+const ARTISTIC_SHAPES = [
+  {
+    name: 'U',
+    segments: [
+      [{ row: 0, col: 0 }, { row: 1, col: 0 }, { row: 2, col: 0 }, { row: 3, col: 0 }, { row: 4, col: 0 }],
+      [{ row: 0, col: 4 }, { row: 1, col: 4 }, { row: 2, col: 4 }, { row: 3, col: 4 }],
+      [{ row: 4, col: 1 }, { row: 4, col: 2 }, { row: 4, col: 3 }],
+      [{ row: 0, col: 5 }, { row: 0, col: 6 }, { row: 0, col: 7 }],
+      [{ row: 4, col: 4 }, { row: 4, col: 5 }]
+    ]
+  },
+  {
+    name: 'C',
+    segments: [
+      [{ row: 0, col: 0 }, { row: 0, col: 1 }, { row: 0, col: 2 }, { row: 0, col: 3 }, { row: 0, col: 4 }],
+      [{ row: 1, col: 0 }, { row: 2, col: 0 }, { row: 3, col: 0 }],
+      [{ row: 4, col: 1 }, { row: 4, col: 2 }, { row: 4, col: 3 }, { row: 4, col: 4 }],
+      [{ row: 1, col: 6 }, { row: 2, col: 6 }, { row: 3, col: 6 }],
+      [{ row: 4, col: 7 }, { row: 4, col: 8 }]
+    ]
+  },
+  {
+    name: 'T',
+    segments: [
+      [{ row: 0, col: 3 }, { row: 0, col: 4 }, { row: 0, col: 5 }, { row: 0, col: 6 }, { row: 0, col: 7 }],
+      [{ row: 1, col: 5 }, { row: 2, col: 5 }, { row: 3, col: 5 }, { row: 4, col: 5 }],
+      [{ row: 5, col: 5 }, { row: 5, col: 6 }, { row: 5, col: 7 }],
+      [{ row: 1, col: 2 }, { row: 2, col: 2 }, { row: 3, col: 2 }],
+      [{ row: 4, col: 8 }, { row: 4, col: 9 }]
+    ]
+  },
+  {
+    name: 'Zigzag',
+    segments: [
+      [{ row: 0, col: 0 }, { row: 0, col: 1 }, { row: 0, col: 2 }, { row: 0, col: 3 }, { row: 0, col: 4 }],
+      [{ row: 1, col: 4 }, { row: 2, col: 4 }, { row: 3, col: 4 }, { row: 4, col: 4 }],
+      [{ row: 4, col: 5 }, { row: 4, col: 6 }, { row: 4, col: 7 }],
+      [{ row: 5, col: 7 }, { row: 6, col: 7 }, { row: 7, col: 7 }],
+      [{ row: 7, col: 5 }, { row: 7, col: 6 }]
+    ]
+  },
+  {
+    name: 'Cross',
+    segments: [
+      [{ row: 2, col: 0 }, { row: 2, col: 1 }, { row: 2, col: 2 }, { row: 2, col: 3 }, { row: 2, col: 4 }],
+      [{ row: 2, col: 6 }, { row: 2, col: 7 }, { row: 2, col: 8 }, { row: 2, col: 9 }],
+      [{ row: 0, col: 5 }, { row: 1, col: 5 }, { row: 2, col: 5 }],
+      [{ row: 3, col: 5 }, { row: 4, col: 5 }, { row: 5, col: 5 }],
+      [{ row: 7, col: 4 }, { row: 7, col: 5 }]
+    ]
+  }
+];
+
+export const generateArtisticPlacementPattern = () => {
+  const shape = ARTISTIC_SHAPES[Math.floor(Math.random() * ARTISTIC_SHAPES.length)];
+  const segments = [...shape.segments].sort((a, b) => b.length - a.length);
+  const pattern = segments.map((segment, i) => ({
+    name: SHIPS[i].name,
+    positions: segment
+  }));
+  return { pattern, shapeName: shape.name };
+};

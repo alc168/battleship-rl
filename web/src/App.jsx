@@ -21,6 +21,7 @@ import {
   seedPlacementMemory,
   selectPlacementPattern,
   applyPlacementPattern,
+  generateArtisticPlacementPattern,
   updatePlacementMemory,
   mergeWeightDelta
 } from './utils.js';
@@ -310,11 +311,22 @@ function App() {
     addLog(`Reviewing ${memoryCount} stored human board layout${memoryCount === 1 ? '' : 's'}...`);
     setComputerDecision({ thinking: `Reviewing ${memoryCount} stored human board layout${memoryCount === 1 ? '' : 's'} and selecting a defensive deployment...`, source: 'placement' });
 
-    let pattern = selectPlacementPattern(placementMemory);
-    if (!pattern) {
-      // Should only happen before memory is seeded; generate a fresh random fallback
-      const fallback = seedPlacementMemory(1);
-      pattern = fallback[0]?.pattern || [];
+    let pattern;
+    let shapeName = null;
+    const isArtistic = humorLevel >= 2 && Math.random() < 0.2;
+
+    if (isArtistic) {
+      const artistic = generateArtisticPlacementPattern();
+      pattern = artistic.pattern;
+      shapeName = artistic.shapeName;
+      addLog(`Defensive deployment configured in a ${shapeName} formation, just to keep things interesting.`);
+    } else {
+      pattern = selectPlacementPattern(placementMemory);
+      if (!pattern) {
+        // Should only happen before memory is seeded; generate a fresh random fallback
+        const fallback = seedPlacementMemory(1);
+        pattern = fallback[0]?.pattern || [];
+      }
     }
     let result = applyPlacementPattern(pattern);
 
@@ -322,15 +334,20 @@ function App() {
     if (result.shipPositions.length !== SHIPS.length) {
       addLog('Placement pattern was incomplete; falling back to random computer placement.');
       result = placeShipsRandomlyWithTracking(createEmptyGrid());
+      shapeName = null;
     }
 
-    addLog('Defensive deployment selected and concealed from the enemy.');
-    setComputerDecision({ thinking: 'Defensive deployment selected and concealed. Awaiting your opening salvo.', source: 'placement' });
+    if (shapeName) {
+      setComputerDecision({ thinking: `Defensive deployment configured in a ${shapeName} formation. Awaiting your opening salvo.`, source: 'placement' });
+    } else {
+      addLog('Defensive deployment selected and concealed from the enemy.');
+      setComputerDecision({ thinking: 'Defensive deployment selected and concealed. Awaiting your opening salvo.', source: 'placement' });
+    }
 
     setComputerGrid(result.grid);
     setComputerShipPositions(result.shipPositions);
     setGamePhase(GAME_PHASES.PLAYING);
-  }, [placementMemory, addLog]);
+  }, [placementMemory, addLog, humorLevel]);
 
   // During placement, keep the console informed about the computer's preparations
   useEffect(() => {
