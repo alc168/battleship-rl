@@ -3,7 +3,7 @@
 
 const MAX_LAYOUT_JSON_LENGTH = 2000;
 const MAX_DELTA_STATES = 10000;
-const MAX_DELTA_ACTIONS_PER_STATE = 10;
+const MAX_DELTA_ACTIONS_PER_STATE = 20;
 const MAX_DELTA_BYTES = 2 * 1024 * 1024;
 const RATE_LIMIT_WINDOW_MS = 60 * 1000;
 const RATE_LIMIT_MAX = 30; // max POST requests per IP per minute
@@ -115,7 +115,7 @@ function validateDelta(delta) {
 
 function mergeWeights(existing, delta) {
   const MAX_STATES = 100000;
-  const MAX_ACTIONS = 8;
+  const MAX_ACTIONS = 20;
   const MIN_SAMPLES = 3;
 
   const merged = { ...existing };

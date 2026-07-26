@@ -235,16 +235,62 @@ export const getBoardKey = (computerMoves, playerShipPositions, playerSunkShips)
 };
 
 /**
+ * Find the closest known board key to a query by Hamming distance.
+ * This lets the AI generalise from similar (but not identical) states.
+ */
+function getClosestBoardKey(query, aiPolicy, maxDistance = 6) {
+  const keys = Object.keys(aiPolicy).filter(k => k !== 'empty_board');
+  let best = null;
+  let bestDistance = Infinity;
+  for (const key of keys) {
+    if (key.length !== query.length) continue;
+    let distance = 0;
+    for (let i = 0; i < key.length; i++) {
+      if (key[i] !== query[i]) distance++;
+      if (distance >= bestDistance) break; // early exit
+    }
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      best = key;
+    }
+  }
+  return bestDistance <= maxDistance ? best : null;
+}
+
+function countKnownCells(boardKey) {
+  let count = 0;
+  for (const char of boardKey) {
+    if (char !== '0') count++;
+  }
+  return count;
+}
+
+/**
  * Look up the Teacher's recommended move for the current board state.
  * Falls back to null so the caller can use random/hunt logic instead.
+ *
+ * Improvements:
+ * 1. Exact match.
+ * 2. empty_board for mostly-unknown states.
+ * 3. Closest known state within a small Hamming distance.
  */
 export const getAiMove = (boardKey, aiPolicy, computerMoves) => {
   if (!aiPolicy) return null;
 
-  let recommendations = aiPolicy[boardKey];
   const emptyKey = '0'.repeat(GRID_SIZE * GRID_SIZE);
-  if (!recommendations && boardKey === emptyKey && aiPolicy['empty_board']) {
+  let recommendations = aiPolicy[boardKey];
+
+  // If the board is almost empty and no exact match, use the empty-board policy
+  if (!recommendations && countKnownCells(boardKey) <= 4 && aiPolicy['empty_board']) {
     recommendations = aiPolicy['empty_board'];
+  }
+
+  // Generalise from the closest known state (if within a small Hamming radius)
+  if (!recommendations || recommendations.length === 0) {
+    const closest = getClosestBoardKey(boardKey, aiPolicy, 6);
+    if (closest) {
+      recommendations = aiPolicy[closest];
+    }
   }
 
   if (!recommendations || recommendations.length === 0) return null;

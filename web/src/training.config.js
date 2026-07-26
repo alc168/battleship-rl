@@ -13,8 +13,8 @@ export const PRESETS = {
     GAMES_PER_BATCH: 500,           // larger batch; one KV write per batch
     CHUNK_SIZE: 50,                 // report progress every 50 games
     UPLOAD_INTERVAL_BATCHES: 1,     // one API write per completed batch
-    MAX_ACTIONS_PER_STATE: 5,       // keep KV value small
-    MIN_SAMPLES_PER_ACTION: 10,     // ignore rarely-seen actions
+    MAX_ACTIONS_PER_STATE: 20,      // more candidate cells per known state
+    MIN_SAMPLES_PER_ACTION: 3,      // keep actions but require minimal evidence
     MAX_STATES: 20000,              // hard cap on stored board states
     PRUNE_STATES_THRESHOLD: 25000,  // start pruning when above this
     EXPLORATION_EPSILON: 0.25,      // cheaper because it explores more randomly
@@ -27,7 +27,7 @@ export const PRESETS = {
     GAMES_PER_BATCH: 500,
     CHUNK_SIZE: 50,
     UPLOAD_INTERVAL_BATCHES: 1,
-    MAX_ACTIONS_PER_STATE: 8,
+    MAX_ACTIONS_PER_STATE: 20,
     MIN_SAMPLES_PER_ACTION: 3,
     MAX_STATES: 100000,
     PRUNE_STATES_THRESHOLD: 120000,

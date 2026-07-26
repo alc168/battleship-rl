@@ -52,7 +52,7 @@ function App() {
   const [placementMemory, setPlacementMemory] = useState([]);
 
   // Tactical console: info panel, logs, and last computer decision
-  const [showInfoPanel, setShowInfoPanel] = useState(false);
+  const [showInfoPanel, setShowInfoPanel] = useState(true);
   const [consoleLog, setConsoleLog] = useState([]);
   const [computerDecision, setComputerDecision] = useState(null);
   const [heatMap, setHeatMap] = useState(null);
@@ -791,11 +791,10 @@ function App() {
           <span>v{APP_VERSION}</span>
           <button
             onClick={() => setShowInfoPanel(prev => !prev)}
-            className="info-button"
-            aria-label={showInfoPanel ? 'Close tactical console' : 'Open tactical console'}
-            title="Tactical console"
+            className="tactical-button px-3 py-1 rounded text-xs uppercase tracking-wider"
+            aria-label={showInfoPanel ? 'Close computer tactical console' : 'Open computer tactical console'}
           >
-            {'\u24D8'}
+            {showInfoPanel ? 'Close Console' : 'Computer Tactical Console'}
           </button>
         </div>
       </div>
