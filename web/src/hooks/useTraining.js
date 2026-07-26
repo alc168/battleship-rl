@@ -11,6 +11,7 @@ import { CONFIG } from '../training.config.js';
 export function useTraining(weightMap, placementMemory, onComplete, addLog) {
   const workerRef = useRef(null);
   const isTraining = useRef(false);
+  const timeoutRef = useRef(null);
   const weightMapRef = useRef(weightMap);
   const placementMemoryRef = useRef(placementMemory);
   const onCompleteRef = useRef(onComplete);
@@ -25,6 +26,11 @@ export function useTraining(weightMap, placementMemory, onComplete, addLog) {
     if (isTraining.current) return;
     if (typeof document !== 'undefined' && document.hidden) return;
 
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
+    }
+
     isTraining.current = true;
     if (delay === 0) {
       addLogRef.current('Starting background training immediately');
@@ -32,7 +38,8 @@ export function useTraining(weightMap, placementMemory, onComplete, addLog) {
       addLogRef.current(`Scheduling background training in ${delay}ms`);
     }
 
-    setTimeout(() => {
+    timeoutRef.current = setTimeout(() => {
+      timeoutRef.current = null;
       if ((typeof document !== 'undefined' && document.hidden) || !workerRef.current) {
         isTraining.current = false;
         return;
@@ -83,7 +90,13 @@ export function useTraining(weightMap, placementMemory, onComplete, addLog) {
     // Begin synthetic training immediately, even before the player places ships
     scheduleNextTraining(0);
 
-    return () => worker.terminate();
+    return () => {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+        timeoutRef.current = null;
+      }
+      worker.terminate();
+    };
   }, [scheduleNextTraining]);
 
   return { scheduleNextTraining, isTraining };

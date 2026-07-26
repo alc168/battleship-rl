@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { GAME_PHASES, ORIENTATIONS, SHIPS, CELL_STATES, GRID_SIZE } from './constants.js';
+import { GAME_PHASES, ORIENTATIONS, SHIPS, GRID_SIZE } from './constants.js';
 import { useAudio } from './hooks/useAudio.js';
 import { useMobile } from './hooks/useMobile.js';
 import { useTraining } from './hooks/useTraining.js';

@@ -75,15 +75,12 @@ async function buildDelta(games, weightMap, placementMemory) {
     // Shooter (policy side) ships
     const pattern = selectPattern(placementMemory);
     let shooterGrid;
-    let shooterShips;
     if (pattern) {
       const result = applyPlacementPattern(pattern);
       shooterGrid = result.grid;
-      shooterShips = result.shipPositions;
     } else {
       const result = placeShipsRandomlyWithTracking(createEmptyGrid());
       shooterGrid = result.grid;
-      shooterShips = result.shipPositions;
     }
 
     // Opponent ships

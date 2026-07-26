@@ -282,7 +282,6 @@ function countKnownCells(boardKey) {
 export const getAiMove = (boardKey, aiPolicy, computerMoves) => {
   if (!aiPolicy) return null;
 
-  const emptyKey = '0'.repeat(GRID_SIZE * GRID_SIZE);
   let recommendations = aiPolicy[boardKey];
   let source = 'exact';
   let matchedKey = boardKey;

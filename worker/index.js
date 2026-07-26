@@ -8,23 +8,28 @@ const MAX_DELTA_BYTES = 2 * 1024 * 1024;
 const RATE_LIMIT_WINDOW_MS = 60 * 1000;
 const RATE_LIMIT_MAX = 30; // max POST requests per IP per minute
 
-class RateLimiter {
-  constructor() {
-    this.requests = new Map();
-  }
+async function rateLimitAllowed(db, ip) {
+  const now = Date.now();
+  const windowStart = Math.floor(now / RATE_LIMIT_WINDOW_MS) * RATE_LIMIT_WINDOW_MS;
 
-  isAllowed(key) {
-    const now = Date.now();
-    const timestamps = this.requests.get(key) || [];
-    const recent = timestamps.filter(ts => now - ts < RATE_LIMIT_WINDOW_MS);
-    if (recent.length >= RATE_LIMIT_MAX) return false;
-    recent.push(now);
-    this.requests.set(key, recent);
+  const row = await db.prepare(
+    'SELECT count FROM rate_limits WHERE ip = ? AND window_start = ?'
+  ).bind(ip, windowStart).first();
+
+  if (!row) {
+    await db.prepare(
+      'INSERT INTO rate_limits (ip, window_start, count) VALUES (?, ?, 1)'
+    ).bind(ip, windowStart).run();
     return true;
   }
-}
 
-const limiter = new RateLimiter();
+  if (row.count >= RATE_LIMIT_MAX) return false;
+
+  await db.prepare(
+    'UPDATE rate_limits SET count = count + 1 WHERE ip = ? AND window_start = ?'
+  ).bind(ip, windowStart).run();
+  return true;
+}
 
 function isAllowedOrigin(request, env) {
   const origin = request.headers.get('Origin');
@@ -58,6 +63,8 @@ function error(message, status = 400, extraHeaders = {}) {
 }
 
 function getClientIp(request) {
+  // CF-Connecting-IP is set by Cloudflare and is the only trustworthy source.
+  // X-Forwarded-For is used as a fallback for local/development tests only.
   const cf = request.headers.get('CF-Connecting-IP');
   if (cf) return cf;
   const xff = request.headers.get('X-Forwarded-For');
@@ -65,10 +72,13 @@ function getClientIp(request) {
   return 'unknown';
 }
 
-function checkApiKey(request, env) {
+async function checkApiKey(request, env) {
   if (!env.API_KEY) return true; // auth is optional until a key is configured
-  const provided = request.headers.get('X-API-Key');
-  return provided === env.API_KEY;
+  const provided = request.headers.get('X-API-Key') || '';
+  if (provided.length !== env.API_KEY.length) return false;
+  const providedBuf = new TextEncoder().encode(provided);
+  const keyBuf = new TextEncoder().encode(env.API_KEY);
+  return crypto.subtle.timingSafeEqual(providedBuf, keyBuf);
 }
 
 function validateLayout(layout_json, win) {
@@ -108,7 +118,7 @@ function validateDelta(delta) {
     }
   }
 
-  const size = JSON.stringify(delta).length;
+  const size = new TextEncoder().encode(JSON.stringify(delta)).length;
   if (size > MAX_DELTA_BYTES) return `delta is larger than ${MAX_DELTA_BYTES} bytes`;
   return null;
 }
@@ -206,10 +216,10 @@ export default {
       }
 
       if (url.pathname === '/api/record' && request.method === 'POST') {
-        if (!checkApiKey(request, env)) {
+        if (!(await checkApiKey(request, env))) {
           return error('Invalid or missing API key', 401, extraHeaders);
         }
-        if (clientIp !== 'unknown' && !limiter.isAllowed(clientIp)) {
+        if (clientIp !== 'unknown' && !(await rateLimitAllowed(env.DB, clientIp))) {
           return error('Rate limit exceeded', 429, extraHeaders);
         }
 
@@ -246,10 +256,10 @@ export default {
       }
 
       if (url.pathname === '/api/merge-weights' && request.method === 'POST') {
-        if (!checkApiKey(request, env)) {
+        if (!(await checkApiKey(request, env))) {
           return error('Invalid or missing API key', 401, extraHeaders);
         }
-        if (clientIp !== 'unknown' && !limiter.isAllowed(clientIp)) {
+        if (clientIp !== 'unknown' && !(await rateLimitAllowed(env.DB, clientIp))) {
           return error('Rate limit exceeded', 429, extraHeaders);
         }
 
