@@ -7,5 +7,5 @@
  *   VITE_TRAINING_MODE=COST_FIRST
  */
 
-export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8787';
+export const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8787').replace(/\/$/, '');
 export const TRAINING_MODE = import.meta.env.VITE_TRAINING_MODE || 'COST_FIRST';
