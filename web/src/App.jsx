@@ -135,6 +135,7 @@ function App() {
   const [heatMap, setHeatMap] = useState(null);
   const [firedProbabilities, setFiredProbabilities] = useState({});
   const [humorLevel, setHumorLevel] = useState(1);
+  const [soundOn, setSoundOn] = useState(true);
   const [humanGames, setHumanGames] = useState(0);
   const [syntheticGames, setSyntheticGames] = useState(0);
   const [knownStates, setKnownStates] = useState(0);
@@ -161,12 +162,17 @@ function App() {
 
   // Create and play a sound, using the Vite base URL so paths work on GitHub Pages
   const playSound = useCallback((filename) => {
-    const base = import.meta.env.BASE_URL || '/';
-    const audio = new Audio(`${base}${filename}`);
-    audio.play().catch((err) => {
-      console.warn('Audio play failed:', filename, err.message);
-    });
-  }, []);
+    if (!soundOn) return;
+    try {
+      const base = import.meta.env.BASE_URL || '/';
+      const audio = new Audio(`${base}${filename}`);
+      audio.play().catch((err) => {
+        console.warn('Audio play failed:', filename, err.message);
+      });
+    } catch (err) {
+      console.warn('Audio creation failed:', filename, err.message);
+    }
+  }, [soundOn]);
 
   const addLog = useCallback((message) => {
     const timestamp = new Date().toLocaleTimeString();
@@ -433,6 +439,10 @@ function App() {
 
     const { grid: newComputerGrid, hit } = processAttack(computerGrid, row, col);
     const updatedMoves = [...playerMoves, { row, col, hit }];
+
+    if (!hit) {
+      playSound('miss.mp3');
+    }
     
     setComputerGrid(newComputerGrid);
     setPlayerMoves(updatedMoves);
@@ -609,6 +619,10 @@ function App() {
 
     const { grid: newPlayerGrid, hit } = processAttack(playerGrid, row, col);
     const updatedMoves = [...computerMoves, { row, col, hit }];
+
+    if (!hit) {
+      playSound('miss.mp3');
+    }
 
     setPlayerGrid(newPlayerGrid);
     setComputerMoves(updatedMoves);
@@ -1021,6 +1035,13 @@ function App() {
         </h1>
         <div className="absolute top-0 right-4 flex items-center gap-3 text-xs text-green-600 font-mono">
           <span>v{APP_VERSION}</span>
+          <button
+            onClick={() => setSoundOn(prev => !prev)}
+            className="tactical-button px-3 py-1 rounded text-xs uppercase tracking-wider"
+            aria-label={soundOn ? 'Turn sound off' : 'Turn sound on'}
+          >
+            {soundOn ? 'Sound On' : 'Sound Off'}
+          </button>
           <button
             onClick={() => setShowInfoPanel(prev => !prev)}
             className="tactical-button px-3 py-1 rounded text-xs uppercase tracking-wider"
