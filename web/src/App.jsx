@@ -182,6 +182,10 @@ function App() {
 
   // Randomly place enemy ships and start the playing phase
   const startGame = useCallback(() => {
+    const memoryCount = placementMemory.length;
+    addLog(`Reviewing ${memoryCount} stored human board layout${memoryCount === 1 ? '' : 's'}...`);
+    setComputerDecision({ thinking: `Reviewing ${memoryCount} stored human board layout${memoryCount === 1 ? '' : 's'} and selecting a defensive deployment...`, source: 'placement' });
+
     let pattern = selectPlacementPattern(placementMemory);
     if (!pattern) {
       // Should only happen before memory is seeded; generate a fresh random fallback
@@ -196,10 +200,23 @@ function App() {
       result = placeShipsRandomlyWithTracking(createEmptyGrid());
     }
 
+    addLog('Defensive deployment selected and concealed from the enemy.');
+    setComputerDecision({ thinking: 'Defensive deployment selected and concealed. Awaiting your opening salvo.', source: 'placement' });
+
     setComputerGrid(result.grid);
     setComputerShipPositions(result.shipPositions);
     setGamePhase(GAME_PHASES.PLAYING);
   }, [placementMemory, addLog]);
+
+  // During placement, keep the console informed about the computer's preparations
+  useEffect(() => {
+    if (gamePhase !== GAME_PHASES.PLACEMENT) return;
+    const count = placementMemory.length;
+    setComputerDecision({
+      thinking: `Observing your deployment. I am considering ${count} stored human board layout${count === 1 ? '' : 's'} for my defensive position.`,
+      source: 'placement'
+    });
+  }, [gamePhase, placementMemory]);
 
   // Randomly place any ships not yet deployed, then start the game
   const handleRandomPlacement = useCallback(() => {
@@ -928,7 +945,7 @@ function App() {
             {/* Last computer decision */}
             <div className="info-section">
               <div className="info-section-title">Last Enemy Decision</div>
-              {computerDecision ? (
+              {computerDecision && typeof computerDecision.row === 'number' ? (
                 <div className="text-xs space-y-1">
                   <div className="text-cyan-300">Target: <span className="text-white">[{computerDecision.row},{computerDecision.col}]</span></div>
                   <div className="text-cyan-300/80">Source: <span className="text-cyan-100 uppercase">{computerDecision.source}</span></div>
