@@ -102,6 +102,16 @@ function getThinkingMessage(source, winRate, row, col, humor) {
   return message;
 }
 
+function renderShipIcon(size, isSunk) {
+  const squares = Array.from({ length: size }, (_, i) => (
+    <div
+      key={i}
+      className={'w-1.5 h-3 rounded-sm ' + (isSunk ? 'bg-red-600' : 'bg-gray-500')}
+    ></div>
+  ));
+  return <div className="flex gap-0.5 items-center">{squares}</div>;
+}
+
 function App() {
   // Core game state: placement grid, enemy grid, and turn management
   const [gamePhase, setGamePhase] = useState(GAME_PHASES.PLACEMENT);
