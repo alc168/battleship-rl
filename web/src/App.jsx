@@ -319,7 +319,7 @@ function App() {
       const { type, delta, completed, elapsed, total, error } = event.data;
 
       if (type === 'progress') {
-        addLog(`Training progress: ${completed}/${total} games`);
+        addLog(`Training batch: ${completed}/${total} games`);
         return;
       }
 

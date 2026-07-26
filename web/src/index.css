@@ -355,7 +355,7 @@
   }
 
   .console-feed {
-    @apply h-36 overflow-y-auto space-y-0.5 pr-1;
+    @apply h-36 overflow-y-auto flex flex-col-reverse gap-0.5 pr-1;
     scrollbar-width: thin;
     scrollbar-color: rgba(34, 211, 238, 0.4) transparent;
   }
