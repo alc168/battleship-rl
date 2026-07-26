@@ -387,7 +387,7 @@ The Vite dev server starts on `http://localhost:5173`.
 
 ## Audio
 
-The sound effects are a deliberate homage to the Milton Bradley *Battleship* television commercial that aired in 1975. That spot is remembered for its operatic, naval-battle staging of the classic board game, and the in-game audio cues echo its dramatic, toy-theatre tone.
+The sound effects are a deliberate homage to the Milton Bradley *Battleship* television commercial that aired in 1975. That spot is remembered for its operatic, naval-battle staging of the classic board game, and the in-game audio cues echo its dramatic, toy-theatre tone.  Eleven labs https://elevenlabs.io/ was used to generate sound effects and British Voiceovers.
 
 You can watch the original 1975 commercial here:  
 [Milton Bradley Battleship game Opera TV commercial, 1975](https://www.youtube.com/watch?v=VXkVZ0rloio)
