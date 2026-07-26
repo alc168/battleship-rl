@@ -3,8 +3,8 @@
 @tailwind utilities;
 
 @layer base {
-  body {
-    @apply bg-gray-900 overflow-hidden;
+  html, body {
+    @apply min-h-screen bg-gray-900 overflow-y-auto;
   }
 }
 
@@ -375,15 +375,16 @@
 
   .heatmap-grid {
     display: grid;
-    grid-template-columns: repeat(10, 1fr);
+    grid-template-columns: repeat(10, minmax(0, 1fr));
     gap: 2px;
+    width: fit-content;
+    margin: 0 auto;
     aspect-ratio: 1;
   }
 
   .heatmap-cell {
-    @apply flex items-center justify-center text-[6px] leading-none font-mono text-white/95;
+    @apply w-6 h-6 border border-transparent flex items-center justify-center text-[6px] leading-none font-mono text-white/95;
     border-radius: 2px;
-    aspect-ratio: 1;
     text-shadow: 0 0 2px rgba(0, 0, 0, 0.9);
   }
 }
