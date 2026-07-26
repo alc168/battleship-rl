@@ -128,8 +128,11 @@ function App() {
   // Memory of human ship placements; used to choose computer placements
   const [placementMemory, setPlacementMemory] = useState([]);
 
+  const initialIsMobile = typeof window !== 'undefined' && window.matchMedia('(max-width: 768px)').matches;
+
   // Tactical console: info panel, logs, and last computer decision
-  const [showInfoPanel, setShowInfoPanel] = useState(true);
+  const [showInfoPanel, setShowInfoPanel] = useState(!initialIsMobile);
+  const [isMobile, setIsMobile] = useState(initialIsMobile);
   const [consoleLog, setConsoleLog] = useState([]);
   const [computerDecision, setComputerDecision] = useState(null);
   const [heatMap, setHeatMap] = useState(null);
@@ -159,6 +162,14 @@ function App() {
 
   useEffect(() => { placementMemoryRef.current = placementMemory; }, [placementMemory]);
   useEffect(() => { gamePhaseRef.current = gamePhase; }, [gamePhase]);
+
+  // Detect mobile viewport changes after initial load
+  useEffect(() => {
+    const mql = window.matchMedia('(max-width: 768px)');
+    const update = () => setIsMobile(mql.matches);
+    mql.addEventListener('change', update);
+    return () => mql.removeEventListener('change', update);
+  }, []);
 
   // Create and play a sound, using the Vite base URL so paths work on GitHub Pages
   const playSound = useCallback((filename) => {
@@ -888,6 +899,40 @@ function App() {
     );
   };
 
+  // Render just the firing probability heatmap (used in desktop and mobile views)
+  const renderHeatmap = () => {
+    return (
+      <div className="info-section">
+        <div className="info-section-title">Firing Probability Heatmap</div>
+        <div className="heatmap-grid">
+          {heatMap && heatMap.map((row, r) =>
+            row.map((cell, c) => {
+              const attacked = computerMoves.some(m => m.row === r && m.col === c);
+              const prob = attacked ? (firedProbabilities[`${r}-${c}`] ?? cell.value) : cell.value;
+              const clamped = Math.min(Math.max(prob, 0), 1);
+              const hue = 200 - clamped * 160; // cyan (200) -> red (40)
+              const bg = `hsl(${hue}, ${attacked ? '70%' : '100%'}, ${attacked ? '35%' : '50%'})`;
+              const label = `${Math.round(clamped * 100)}`;
+              return (
+                <div
+                  key={`heat-${r}-${c}`}
+                  className="heatmap-cell"
+                  style={{ backgroundColor: bg }}
+                  title={`[${r},${c}] ${attacked ? 'fired at' : 'current'} probability: ${label}%`}
+                >
+                  {label}
+                </div>
+              );
+            })
+          )}
+        </div>
+        <div className="text-[10px] text-cyan-400/60 mt-1 text-center">
+          Overlay shows the AI's estimated win probability for each friendly cell.
+        </div>
+      </div>
+    );
+  };
+
   // Render the tactical information console with live logs and heatmap
   const renderInfoPanel = () => {
     const topActions = computerDecision?.topActions || [];
@@ -975,34 +1020,7 @@ function App() {
           {/* Right column: heatmap, recommendations, decision */}
           <div className="flex flex-col gap-3">
             {/* Probability heatmap */}
-            <div className="info-section">
-              <div className="info-section-title">Firing Probability Heatmap</div>
-              <div className="heatmap-grid">
-                {heatMap && heatMap.map((row, r) =>
-                  row.map((cell, c) => {
-                    const attacked = computerMoves.some(m => m.row === r && m.col === c);
-                    const prob = attacked ? (firedProbabilities[`${r}-${c}`] ?? cell.value) : cell.value;
-                    const clamped = Math.min(Math.max(prob, 0), 1);
-                    const hue = 200 - clamped * 160; // cyan (200) -> red (40)
-                    const bg = `hsl(${hue}, ${attacked ? '70%' : '100%'}, ${attacked ? '35%' : '50%'})`;
-                    const label = `${Math.round(clamped * 100)}`;
-                    return (
-                      <div
-                        key={`heat-${r}-${c}`}
-                        className="heatmap-cell"
-                        style={{ backgroundColor: bg }}
-                        title={`[${r},${c}] ${attacked ? 'fired at' : 'current'} probability: ${label}%`}
-                      >
-                        {label}
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-              <div className="text-[10px] text-cyan-400/60 mt-1 text-center">
-                Overlay shows the AI's estimated win probability for each friendly cell.
-              </div>
-            </div>
+            {renderHeatmap()}
 
             {/* Top recommendations */}
             {topActions.length > 0 && (
@@ -1142,36 +1160,72 @@ function App() {
       
       {/* Game Area */}
       <div className="game-area">
-        {/* Game boards column */}
-        <div className="flex flex-col md:flex-row items-start justify-center gap-4 md:gap-6 flex-1 min-w-0">
-          {/* Player Grid */}
-          <div className="flex flex-col items-center gap-2">
-            <h3 className="text-sm font-semibold text-green-400 uppercase tracking-wider">
-              Friendly Waters
-            </h3>
-            {renderGrid(playerGrid, false)}
-            {renderShipStatus(SHIPS, playerSunkShips, playerPlacedShips, true)}
-          </div>
+        {isMobile ? (
+          /* Mobile layout: enemy waters on top, optional heatmap, friendly waters below */
+          <div className="flex flex-col items-center gap-4 w-full">
+            {gamePhase !== GAME_PHASES.PLACEMENT && (
+              <div className="flex flex-col items-center gap-2 w-full">
+                <h3 className="text-sm font-semibold text-green-400 uppercase tracking-wider">
+                  Enemy Waters
+                </h3>
+                {gamePhase === GAME_PHASES.PLAYING && playerMoves.length === 0 && (
+                  <div className="text-xs text-green-300 bg-gray-800/80 px-3 py-1 rounded border border-green-500/30 animate-pulse">
+                    🎯 Click any square to fire a missile
+                  </div>
+                )}
+                {renderGrid(computerGrid, true)}
+                {renderShipStatus(SHIPS, computerSunkShips, gamePhase === GAME_PHASES.PLAYING ? SHIPS.map(s => s.name) : [], false)}
+              </div>
+            )}
 
-          {/* Computer Grid */}
-          {gamePhase !== GAME_PHASES.PLACEMENT && (
-            <div className="flex flex-col items-center gap-2">
+            {showInfoPanel && (
+              <div className="w-full max-w-md">
+                {renderHeatmap()}
+              </div>
+            )}
+
+            <div className="flex flex-col items-center gap-2 w-full">
               <h3 className="text-sm font-semibold text-green-400 uppercase tracking-wider">
-                Enemy Waters
+                Friendly Waters
               </h3>
-              {gamePhase === GAME_PHASES.PLAYING && playerMoves.length === 0 && (
-                <div className="text-xs text-green-300 bg-gray-800/80 px-3 py-1 rounded border border-green-500/30 animate-pulse">
-                  🎯 Click any square to fire a missile
+              {renderGrid(playerGrid, false)}
+              {renderShipStatus(SHIPS, playerSunkShips, playerPlacedShips, true)}
+            </div>
+          </div>
+        ) : (
+          /* Desktop layout: friendly and enemy grids side by side with full console */
+          <>
+            <div className="flex flex-col md:flex-row items-start justify-center gap-4 md:gap-6 flex-1 min-w-0">
+              {/* Player Grid */}
+              <div className="flex flex-col items-center gap-2">
+                <h3 className="text-sm font-semibold text-green-400 uppercase tracking-wider">
+                  Friendly Waters
+                </h3>
+                {renderGrid(playerGrid, false)}
+                {renderShipStatus(SHIPS, playerSunkShips, playerPlacedShips, true)}
+              </div>
+
+              {/* Computer Grid */}
+              {gamePhase !== GAME_PHASES.PLACEMENT && (
+                <div className="flex flex-col items-center gap-2">
+                  <h3 className="text-sm font-semibold text-green-400 uppercase tracking-wider">
+                    Enemy Waters
+                  </h3>
+                  {gamePhase === GAME_PHASES.PLAYING && playerMoves.length === 0 && (
+                    <div className="text-xs text-green-300 bg-gray-800/80 px-3 py-1 rounded border border-green-500/30 animate-pulse">
+                      🎯 Click any square to fire a missile
+                    </div>
+                  )}
+                  {renderGrid(computerGrid, true)}
+                  {renderShipStatus(SHIPS, computerSunkShips, gamePhase === GAME_PHASES.PLAYING ? SHIPS.map(s => s.name) : [], false)}
                 </div>
               )}
-              {renderGrid(computerGrid, true)}
-              {renderShipStatus(SHIPS, computerSunkShips, gamePhase === GAME_PHASES.PLAYING ? SHIPS.map(s => s.name) : [], false)}
             </div>
-          )}
-        </div>
 
-        {/* Tactical info console */}
-        {showInfoPanel && renderInfoPanel()}
+            {/* Tactical info console */}
+            {showInfoPanel && renderInfoPanel()}
+          </>
+        )}
       </div>
       
       {/* Legend */}
