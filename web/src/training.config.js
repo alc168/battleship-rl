@@ -39,4 +39,5 @@ export const PRESETS = {
   }
 };
 
-export const CONFIG = PRESETS[import.meta.env.VITE_TRAINING_MODE] || PRESETS.COST_FIRST;
+const mode = (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_TRAINING_MODE) || 'COST_FIRST';
+export const CONFIG = PRESETS[mode] || PRESETS.COST_FIRST;

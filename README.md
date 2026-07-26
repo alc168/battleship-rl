@@ -279,6 +279,45 @@ npx wrangler d1 execute battleship-rl-db --remote --file=./schema.sql
 
 ---
 
+## Admin testing harness
+
+A test suite lives in `admin/`. It runs on demand, validates every component (game logic, training worker, Worker API, security controls), and writes a timestamped Markdown + JSON report.
+
+### What is tested
+
+| Component | Test coverage | SOC 2 control |
+|---|---|---|
+| **Game logic** | Grid creation, placement, attacks, win detection, ship sinking, board keys, AI move selection | CC7.2 |
+| **Training worker** | 500-game batch completes, progress events emitted, delta returned | CC7.2 |
+| **Worker API** | `weight-map`, `top-layouts`, `stats` availability; `record` and `merge-weights` success/failure cases | A1.2, CC7.2 |
+| **Authentication** | Missing/invalid API keys rejected on write endpoints | CC6.1 |
+| **Input validation** | Oversized/malformed payloads rejected | CC6.6 |
+| **CORS** | Allowed origins pass preflight; disallowed origins are blocked | CC6.6 |
+| **Rate limiting** | Excessive write requests receive `429 Too Many Requests` | CC7.3 |
+
+### Run tests locally
+
+```bash
+cd admin
+cp .env.example .env
+# edit .env with your API_BASE_URL and API_KEY
+npm test
+```
+
+Reports are written to `admin/reports/latest.md` and `admin/reports/latest.json`.
+
+### Publish the admin report to GitHub Pages
+
+```bash
+cd web
+npm run admin:publish
+npm run deploy
+```
+
+This runs the full test suite, copies `admin/index.html` to `web/public/admin.html` and `admin/reports/latest.json` to `web/public/admin-report.json`, then deploys. The report is then viewable at `https://alc168.github.io/battleship-rl/admin.html`.
+
+---
+
 ## Development
 
 ```bash

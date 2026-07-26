@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Battleship RL — Admin Test Report</title>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 1.5rem;
+      color: #1a202c;
+      background: #f7fafc;
+    }
+    h1 { margin-top: 0; }
+    .summary { font-size: 1.1rem; margin: 1rem 0; padding: 1rem; background: #fff; border-radius: 8px; border-left: 4px solid #4a5568; }
+    .pass { color: #276749; font-weight: bold; }
+    .fail { color: #c53030; font-weight: bold; }
+    .skip { color: #dd6b20; font-weight: bold; }
+    table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+    th, td { text-align: left; padding: 0.75rem; border-bottom: 1px solid #e2e8f0; }
+    th { background: #edf2f7; font-weight: 600; }
+    tr:last-child td { border-bottom: none; }
+    .evidence { max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    a { color: #2b6cb0; }
+    #loading { padding: 2rem; text-align: center; color: #718096; }
+  </style>
+</head>
+<body>
+  <h1>Battleship RL — Admin Test Report</h1>
+  <div id="loading">Loading latest report...</div>
+  <div id="report" style="display: none;">
+    <div id="summary" class="summary"></div>
+    <table id="results">
+      <thead>
+        <tr>
+          <th>Status</th>
+          <th>Test</th>
+          <th>Component</th>
+          <th>SOC 2 Control</th>
+          <th>Duration</th>
+          <th>Evidence</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+    <p>
+      <a id="md-link" href="reports/latest.md" target="_blank">View markdown report</a> |
+      <a href="https://github.com/alc168/battleship-rl/tree/main/admin" target="_blank">Admin harness source</a>
+    </p>
+  </div>
+
+  <script>
+    async function loadReport() {
+      // Deployed path (e.g., /battleship-rl/admin.html with /battleship-rl/admin-report.json)
+      let report = await fetch('admin-report.json')
+        .then(r => r.ok ? r.json() : null)
+        .catch(() => null);
+
+      // Local path (admin/index.html with reports/latest.json)
+      if (!report) {
+        report = await fetch('reports/latest.json')
+          .then(r => r.ok ? r.json() : null)
+          .catch(() => null);
+      }
+
+      const loading = document.getElementById('loading');
+      if (!report) {
+        loading.textContent = 'No report found. Run `node admin/run-tests.mjs` first, or publish a report.';
+        return;
+      }
+
+      loading.style.display = 'none';
+      document.getElementById('report').style.display = 'block';
+
+      const { passed, failed, skipped, total } = report.summary;
+      document.getElementById('summary').innerHTML = `
+        Generated: <strong>${new Date(report.generatedAt).toLocaleString()}</strong><br>
+        Environment: ${report.environment.apiBaseUrl}<br>
+        API key configured: ${report.environment.apiKeyPresent ? 'Yes' : 'No'}<br>
+        <span class="pass">${passed} passed</span>,
+        <span class="fail">${failed} failed</span>,
+        <span class="skip">${skipped} skipped</span>
+        out of ${total} tests
+      `;
+
+      const tbody = document.querySelector('#results tbody');
+      for (const r of report.results) {
+        const evidence = r.error ? r.error.split('\n')[0] : 'Passed';
+        const statusClass = r.status === 'PASS' ? 'pass' : r.status === 'FAIL' ? 'fail' : 'skip';
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td class="${statusClass}">${r.status}</td>
+          <td>${r.name}</td>
+          <td>${r.options?.component || ''}</td>
+          <td>${r.options?.control || ''}</td>
+          <td>${r.duration}ms</td>
+          <td class="evidence" title="${evidence.replace(/"/g, '&quot;')}">${evidence}</td>
+        `;
+        tbody.appendChild(tr);
+      }
+    }
+
+    loadReport();
+  </script>
+</body>
+</html>

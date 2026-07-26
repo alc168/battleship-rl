@@ -1,0 +1,10 @@
+{
+  "name": "battleship-rl-admin",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "test": "node run-tests.mjs",
+    "publish": "node run-tests.mjs && node publish.mjs"
+  }
+}
