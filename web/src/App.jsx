@@ -51,6 +51,12 @@ function App() {
   // Memory of human ship placements; used to choose computer placements
   const [placementMemory, setPlacementMemory] = useState([]);
 
+  // Tactical console: info panel, logs, and last computer decision
+  const [showInfoPanel, setShowInfoPanel] = useState(false);
+  const [consoleLog, setConsoleLog] = useState([]);
+  const [computerDecision, setComputerDecision] = useState(null);
+  const [heatMap, setHeatMap] = useState(null);
+
   // Web Worker reference for background training
   const workerRef = useRef(null);
   const isTraining = useRef(false);
@@ -68,6 +74,11 @@ function App() {
 
   useEffect(() => { placementMemoryRef.current = placementMemory; }, [placementMemory]);
   useEffect(() => { gamePhaseRef.current = gamePhase; }, [gamePhase]);
+
+  const addLog = useCallback((message) => {
+    const timestamp = new Date().toLocaleTimeString();
+    setConsoleLog(prev => [...prev.slice(-99), `[${timestamp}] ${message}`]);
+  }, []);
 
   // Start continuous background training whenever a game is active or has just ended
   useEffect(() => {
@@ -182,12 +193,12 @@ function App() {
       const { type, delta, completed, elapsed, total, error } = event.data;
 
       if (type === 'progress') {
-        console.log(`Training progress: ${completed}/${total} games`);
+        addLog(`Training progress: ${completed}/${total} games`);
         return;
       }
 
       if (type === 'complete') {
-        console.log(`Training complete: ${completed} games in ${elapsed?.toFixed?.(0)}ms`);
+        addLog(`Training complete: ${completed} games in ${elapsed?.toFixed?.(0)}ms`);
         if (delta && Object.keys(delta).length > 0) {
           const merged = mergeWeightDelta(weightMapRef.current || {}, delta, 8);
           weightMapRef.current = merged;
@@ -198,8 +209,8 @@ function App() {
             body: JSON.stringify({ delta })
           })
             .then(response => response.json())
-            .then(data => console.log('Merged weights on server:', data))
-            .catch(err => console.error('Failed to merge weights:', err));
+            .then(data => addLog(`Merged weights on server: ${data.states} states`))
+            .catch(err => addLog(`Failed to merge weights: ${err.message}`));
         }
         isTraining.current = false;
         // Keep training continuously while the game is active
@@ -208,19 +219,19 @@ function App() {
       }
 
       if (type === 'error') {
-        console.error('Training worker reported an error:', error);
+        addLog(`Training worker error: ${error}`);
         isTraining.current = false;
       }
     };
 
     worker.onerror = (err) => {
-      console.error('Training worker error:', err);
+      addLog(`Training worker error: ${err.message || err}`);
       isTraining.current = false;
     };
 
     workerRef.current = worker;
     return () => worker.terminate();
-  }, []);
+  }, [addLog]);
 
   // Route grid clicks to placement or attack handlers based on game phase
   const handleCellClick = (row, col) => {
@@ -337,25 +348,27 @@ function App() {
     return getAdjacentCells(row, col);
   };
 
-  // Computer turn: hunt a known hit, otherwise fire randomly
+  // Computer turn: hunt a known hit, otherwise use the learned weight map
   const handleComputerAttack = () => {
     let row, col;
-    
+    let source = 'random';
+    let boardKey = '';
+    let chosenRecommendation = null;
+
     // Filter out invalid hunt targets (already attacked or out of bounds)
-    const validTargets = computerHuntTargets.filter(target => 
+    const validTargets = computerHuntTargets.filter(target =>
       target.row >= 0 && target.row < GRID_SIZE &&
       target.col >= 0 && target.col < GRID_SIZE &&
       !computerMoves.some(move => move.row === target.row && move.col === target.col)
     );
-    
+
     if (validTargets.length > 0) {
-      // Use the first valid hunt target
       const target = validTargets[0];
       row = target.row;
       col = target.col;
+      source = 'hunt';
       setComputerHuntTargets(validTargets.slice(1));
     } else {
-      // No queued hunt targets. If there are unsunk hits, prioritise sinking that ship over the weight map.
       const recentHits = computerMoves.filter(move => move.hit && !isCellOfSunkShip(false, move.row, move.col));
       let fallbackTarget = null;
 
@@ -367,26 +380,28 @@ function App() {
         if (fallbackTarget) {
           row = fallbackTarget.row;
           col = fallbackTarget.col;
+          source = 'hunt';
           setComputerHuntTargets(fallbackTargets.slice(1));
         }
       }
 
       if (!fallbackTarget) {
-        // No unsunk ship to hunt: ask the trained weight map for a move
-        const boardKey = getBoardKey(computerMoves, playerShipPositions, playerSunkShips);
+        boardKey = getBoardKey(computerMoves, playerShipPositions, playerSunkShips);
+        const emptyKey = '0'.repeat(GRID_SIZE * GRID_SIZE);
+        const recommendations = (weightMap && (weightMap[boardKey] || (boardKey === emptyKey && weightMap['empty_board']))) || [];
         const aiMove = getAiMove(boardKey, weightMap, computerMoves);
 
         if (aiMove) {
           row = aiMove.row;
           col = aiMove.col;
+          source = 'policy';
+          chosenRecommendation = recommendations.find(r => r[0] === row && r[1] === col) || null;
         } else {
-          // Weight map has no recommendation for this state; fall back to random
           let validMove = false;
           while (!validMove) {
             const position = getRandomPosition();
             row = position.row;
             col = position.col;
-
             if (!computerMoves.some(move => move.row === row && move.col === col)) {
               validMove = true;
             }
@@ -396,9 +411,38 @@ function App() {
       }
     }
 
+    // Build a heatmap of the computer's firing priorities for the friendly board
+    const heatKey = getBoardKey(computerMoves, playerShipPositions, playerSunkShips);
+    const emptyKey = '0'.repeat(GRID_SIZE * GRID_SIZE);
+    const heatRecommendations = (weightMap && (weightMap[heatKey] || (heatKey === emptyKey && weightMap['empty_board']))) || [];
+    const newHeatMap = [];
+    for (let r = 0; r < GRID_SIZE; r++) {
+      const heatRow = [];
+      for (let c = 0; c < GRID_SIZE; c++) {
+        const attacked = computerMoves.some(m => m.row === r && m.col === c);
+        const rec = heatRecommendations.find(rec => rec[0] === r && rec[1] === c);
+        heatRow.push({
+          attacked,
+          value: rec ? rec[2] : 0,
+          samples: rec ? rec[4] : 0
+        });
+      }
+      newHeatMap.push(heatRow);
+    }
+    setHeatMap(newHeatMap);
+
+    const winRate = chosenRecommendation ? chosenRecommendation[2] : 0;
+    const reasonText = source === 'hunt'
+      ? 'hunt target (sinking a known ship)'
+      : source === 'policy'
+        ? `weight map recommendation, win rate ${(winRate * 100).toFixed(1)}%`
+        : 'random fallback (no policy for this state)';
+    setComputerDecision({ row, col, boardKey: heatKey, source, winRate, reason: reasonText, topActions: heatRecommendations.slice(0, 5) });
+    addLog(`Computer firing at [${row},${col}] — ${reasonText}`);
+
     const { grid: newPlayerGrid, hit } = processAttack(playerGrid, row, col);
     const updatedMoves = [...computerMoves, { row, col, hit }];
-    
+
     setPlayerGrid(newPlayerGrid);
     setComputerMoves(updatedMoves);
 
@@ -406,9 +450,8 @@ function App() {
     if (hit) {
       const newTargets = getHuntDirectionTargets(row, col);
       setComputerHuntTargets(prev => {
-        // Add new targets to the front of the queue, but filter out duplicates and already-attacked cells
         const combined = [...newTargets, ...prev];
-        const filtered = combined.filter((target, index, self) => 
+        const filtered = combined.filter((target, index, self) =>
           index === self.findIndex(t => t.row === target.row && t.col === target.col) &&
           !updatedMoves.some(move => move.row === target.row && move.col === target.col)
         );
@@ -419,7 +462,7 @@ function App() {
     // Check for newly sunk ships using updated moves (including this hit)
     const newSunkShips = checkSunkShips(playerShipPositions, updatedMoves);
     setPlayerSunkShips(newSunkShips);
-    
+
     // Clear hunt targets for sunk ships
     setComputerHuntTargets(prev => prev.filter(target => !newSunkShips.some(name => {
       const sunkShip = playerShipPositions.find(ship => ship.name === name);
@@ -443,13 +486,13 @@ function App() {
     if (gamePhaseRef.current !== GAME_PHASES.PLAYING && gamePhaseRef.current !== GAME_PHASES.GAME_OVER) return;
 
     isTraining.current = true;
-    console.log('Scheduling background training in', delay, 'ms');
+    addLog(`Scheduling background training in ${delay}ms`);
     setTimeout(() => {
       if (document.hidden || !workerRef.current) {
         isTraining.current = false;
         return;
       }
-      console.log('Starting background training with', placementMemoryRef.current?.length || 0, 'placement patterns');
+      addLog(`Starting background training with ${placementMemoryRef.current?.length || 0} placement patterns`);
       workerRef.current.postMessage({
         weightMap: weightMapRef.current,
         placementMemory: placementMemoryRef.current
@@ -638,15 +681,113 @@ function App() {
     );
   };
 
+  // Render the tactical information console with live logs and heatmap
+  const renderInfoPanel = () => {
+    const topActions = computerDecision?.topActions || [];
+
+    return (
+      <div className="info-panel">
+        <div className="info-panel-header">
+          <span className="text-cyan-300 font-bold tracking-widest text-xs">TACTICAL CONSOLE</span>
+          <button
+            onClick={() => setShowInfoPanel(false)}
+            className="text-cyan-500 hover:text-cyan-300 text-xs"
+            aria-label="Close tactical console"
+          >
+            [ CLOSE ]
+          </button>
+        </div>
+
+        <div className="info-panel-content">
+          {/* Live console feed */}
+          <div className="info-section">
+            <div className="info-section-title">Training &amp; Event Log</div>
+            <div className="console-feed">
+              {consoleLog.length === 0 ? (
+                <div className="text-cyan-600/60 text-xs italic">Awaiting telemetry...</div>
+              ) : (
+                consoleLog.map((line, i) => (
+                  <div key={`log-${i}`} className="console-line">{line}</div>
+                ))
+              )}
+            </div>
+          </div>
+
+          {/* Last computer decision */}
+          <div className="info-section">
+            <div className="info-section-title">Last Enemy Decision</div>
+            {computerDecision ? (
+              <div className="text-xs space-y-1">
+                <div className="text-cyan-300">Target: <span className="text-white">[{computerDecision.row},{computerDecision.col}]</span></div>
+                <div className="text-cyan-300/80">Reason: <span className="text-cyan-100">{computerDecision.reason}</span></div>
+                <div className="text-cyan-300/80">Source: <span className="text-cyan-100 uppercase">{computerDecision.source}</span></div>
+                <div className="text-cyan-300/60 font-mono text-[10px] break-all">State: {computerDecision.boardKey}</div>
+              </div>
+            ) : (
+              <div className="text-cyan-600/60 text-xs italic">No enemy action recorded yet.</div>
+            )}
+            {topActions.length > 0 && (
+              <div className="mt-2">
+                <div className="info-section-subtitle">Top Recommendations</div>
+                {topActions.map((action, i) => (
+                  <div key={`rec-${i}`} className="text-[10px] font-mono text-cyan-200/80">
+                    #{i + 1}: [{action[0]},{action[1]}] win {(action[2] * 100).toFixed(1)}% (n={action[4]})
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Probability heatmap */}
+          <div className="info-section">
+            <div className="info-section-title">Firing Probability Heatmap</div>
+            <div className="heatmap-grid">
+              {heatMap && heatMap.map((row, r) =>
+                row.map((cell, c) => {
+                  const intensity = Math.min(cell.value, 1);
+                  const alpha = cell.attacked ? 0.05 : 0.15 + intensity * 0.65;
+                  const bg = cell.attacked
+                    ? 'rgba(100,116,139,0.4)'
+                    : `rgba(6,182,212,${alpha})`;
+                  return (
+                    <div
+                      key={`heat-${r}-${c}`}
+                      className="heatmap-cell"
+                      style={{ backgroundColor: bg }}
+                      title={`[${r},${c}] ${cell.attacked ? 'attacked' : `${(cell.value * 100).toFixed(0)}%`}`}
+                    >
+                      {cell.attacked ? '·' : cell.value > 0 ? `${(cell.value * 100).toFixed(0)}` : ''}
+                    </div>
+                  );
+                })
+              )}
+            </div>
+            <div className="text-[10px] text-cyan-400/60 mt-1 text-center">
+              Overlay shows the AI's estimated win probability for each friendly cell.
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="screen-fit operations-room">
       {/* Header */}
       <div className="header-compact relative">
-        <h1 className="text-2xl font-bold text-green-400 tracking-wider">
-          ⚔️ BATTLESHIPS ⚔️
+        <h1 className="text-2xl font-bold text-green-400 tracking-wider font-mono">
+          battleship-rl
         </h1>
-        <div className="absolute top-0 right-4 text-xs text-green-600 font-mono">
-          v{APP_VERSION}
+        <div className="absolute top-0 right-4 flex items-center gap-3 text-xs text-green-600 font-mono">
+          <span>v{APP_VERSION}</span>
+          <button
+            onClick={() => setShowInfoPanel(prev => !prev)}
+            className="info-button"
+            aria-label={showInfoPanel ? 'Close tactical console' : 'Open tactical console'}
+            title="Tactical console"
+          >
+            {'\u24D8'}
+          </button>
         </div>
       </div>
       
@@ -741,6 +882,9 @@ function App() {
             {renderShipStatus(SHIPS, computerSunkShips, gamePhase === GAME_PHASES.PLAYING ? SHIPS.map(s => s.name) : [], false)}
           </div>
         )}
+
+        {/* Tactical info console */}
+        {showInfoPanel && renderInfoPanel()}
       </div>
       
       {/* Legend */}

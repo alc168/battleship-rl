@@ -1,4 +1,4 @@
-# Battleship RL — Design and Operation
+# battleship-rl v1.0a — Design and Operation
 
 A browser-based Battleship game where a human plays against a computer opponent. The computer learns from every human game and from continuous self-play, storing what it learns in Cloudflare D1 and KV behind a Cloudflare Worker API.
 

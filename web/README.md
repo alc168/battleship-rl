@@ -1,4 +1,4 @@
-# Battleship-R
+# battleship-rl v1.0a
 
 A modern, polished implementation of the classic naval combat game built with React, Vite, and Tailwind CSS. Play directly in your browser against a computer opponent guided by a trained PyTorch Teacher policy (`ai_policy.json`).
 
