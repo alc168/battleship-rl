@@ -176,8 +176,8 @@ function App() {
         setSyntheticGames(data.synthetic_games || 0);
         setKnownStates(data.states || 0);
       })
-      .catch(error => console.error('Failed to load stats:', error));
-  }, []);
+      .catch(error => addLog(`Failed to load stats: ${error.message || error}`));
+  }, [addLog]);
 
   // Merge a training delta into the local weight map and push it to the server
   // less frequently to stay inside the Cloudflare KV free tier.
@@ -373,11 +373,11 @@ function App() {
       body: JSON.stringify({ layout_json: layoutJson, win: humanWon })
     })
       .then(() => fetchStats())
-      .catch(err => console.error('Failed to record layout:', err));
+      .catch(err => addLog(`Failed to record layout: ${err.message || err}`));
 
     // Update local placement memory immediately for the next game
     setPlacementMemory(prev => updatePlacementMemory(prev, playerShipPositions, humanWon, 100));
-  }, [winner, playerShipPositions, fetchStats]);
+  }, [winner, playerShipPositions, fetchStats, addLog]);
 
   // Restore the intro flag from the session so a page refresh does not replay it
   useEffect(() => {
