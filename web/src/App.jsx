@@ -1,5 +1,12 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { GAME_PHASES, ORIENTATIONS, SHIPS, CELL_STATES, GRID_SIZE, APP_VERSION } from './constants.js';
+import { GAME_PHASES, ORIENTATIONS, SHIPS, CELL_STATES, GRID_SIZE } from './constants.js';
+import { useAudio } from './hooks/useAudio.js';
+import { useMobile } from './hooks/useMobile.js';
+import { useTraining } from './hooks/useTraining.js';
+import { Header } from './components/Header.jsx';
+import { StatusBar } from './components/StatusBar.jsx';
+import { InfoPanel } from './components/InfoPanel.jsx';
+import { GameGrid } from './components/GameGrid.jsx';
 import { 
   createEmptyGrid, 
   isValidPlacement, 
@@ -17,12 +24,8 @@ import {
   updatePlacementMemory,
   mergeWeightDelta
 } from './utils.js';
-import { API_BASE_URL, API_KEY, TRAINING_MODE } from './config.js';
-import { CONFIG } from './training.config.js';
+import { API_BASE_URL, API_KEY } from './config.js';
 import './index.css';
-
-// Humour dial labels
-const HUMOR_LABELS = ['Pragmatic', 'Wry', 'Cheeky', 'Philosophical'];
 
 // A curated set of fortune-cookie-style asides for the Computer Tactical Console.
 // Styled after the classic Unix `fortune` program.
@@ -128,77 +131,23 @@ function App() {
   // Memory of human ship placements; used to choose computer placements
   const [placementMemory, setPlacementMemory] = useState([]);
 
-  const initialIsMobile = typeof window !== 'undefined' && window.matchMedia('(max-width: 768px)').matches;
+  const [soundOn, setSoundOn] = useState(true);
+  const playSound = useAudio(soundOn);
+  const isMobile = useMobile();
 
   // Tactical console: info panel, logs, and last computer decision
-  const [showInfoPanel, setShowInfoPanel] = useState(!initialIsMobile);
-  const [isMobile, setIsMobile] = useState(initialIsMobile);
+  const [showInfoPanel, setShowInfoPanel] = useState(!isMobile);
   const [consoleLog, setConsoleLog] = useState([]);
   const [computerDecision, setComputerDecision] = useState(null);
   const [heatMap, setHeatMap] = useState(null);
   const [firedProbabilities, setFiredProbabilities] = useState({});
   const [humorLevel, setHumorLevel] = useState(1);
-  const [soundOn, setSoundOn] = useState(true);
   const [humanGames, setHumanGames] = useState(0);
   const [syntheticGames, setSyntheticGames] = useState(0);
   const [knownStates, setKnownStates] = useState(0);
 
-  // Web Worker reference for background training
-  const workerRef = useRef(null);
   const consoleFeedRef = useRef(null);
   const introPlayedRef = useRef(false);
-  const activeAudioRef = useRef(new Set());
-  const isTraining = useRef(false);
-  const weightMapRef = useRef(weightMap);
-  const placementMemoryRef = useRef(placementMemory);
-  const gamePhaseRef = useRef(gamePhase);
-
-  useEffect(() => {
-    weightMapRef.current = weightMap;
-    // If the game is already active when the weight map arrives, start training
-    if (weightMap && (gamePhaseRef.current === GAME_PHASES.PLAYING || gamePhaseRef.current === GAME_PHASES.GAME_OVER) && !isTraining.current) {
-      scheduleNextTraining();
-    }
-  }, [weightMap]);
-
-  useEffect(() => { placementMemoryRef.current = placementMemory; }, [placementMemory]);
-  useEffect(() => { gamePhaseRef.current = gamePhase; }, [gamePhase]);
-
-  // Detect mobile viewport changes after initial load
-  useEffect(() => {
-    const mql = window.matchMedia('(max-width: 768px)');
-    const update = () => setIsMobile(mql.matches);
-    mql.addEventListener('change', update);
-    return () => mql.removeEventListener('change', update);
-  }, []);
-
-  // Stop all active audio immediately when sound is muted
-  useEffect(() => {
-    if (soundOn) return;
-    activeAudioRef.current.forEach(audio => {
-      audio.pause();
-      audio.currentTime = 0;
-    });
-    activeAudioRef.current.clear();
-  }, [soundOn]);
-
-  // Create and play a sound, using the Vite base URL so paths work on GitHub Pages
-  const playSound = useCallback((filename) => {
-    if (!soundOn) return;
-    try {
-      const base = import.meta.env.BASE_URL || '/';
-      const audio = new Audio(`${base}${filename}`);
-      activeAudioRef.current.add(audio);
-      audio.onended = () => activeAudioRef.current.delete(audio);
-      audio.onerror = () => activeAudioRef.current.delete(audio);
-      audio.play().catch((err) => {
-        activeAudioRef.current.delete(audio);
-        console.warn('Audio play failed:', filename, err.message);
-      });
-    } catch (err) {
-      console.warn('Audio creation failed:', filename, err.message);
-    }
-  }, [soundOn]);
 
   const addLog = useCallback((message) => {
     const timestamp = new Date().toLocaleTimeString();
@@ -215,6 +164,28 @@ function App() {
       })
       .catch(error => console.error('Failed to load stats:', error));
   }, []);
+
+  // Merge a training delta into the local weight map and push it to the server
+  const handleTrainingDelta = useCallback((delta, completed) => {
+    setSyntheticGames(prev => prev + (completed || 0));
+    if (delta && Object.keys(delta).length > 0) {
+      setWeightMap(prev => mergeWeightDelta(prev || {}, delta, 8));
+      fetch(`${API_BASE_URL}/api/merge-weights`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(API_KEY && { 'X-API-Key': API_KEY }) },
+        body: JSON.stringify({ delta, games: completed })
+      })
+        .then(response => response.json())
+        .then(data => {
+          addLog(`Merged weights on server: ${data.states} states`);
+          fetchStats();
+        })
+        .catch(err => addLog(`Failed to merge weights: ${err.message}`));
+    }
+  }, [setSyntheticGames, setWeightMap, addLog, fetchStats]);
+
+  // Initialize the background training worker
+  useTraining(weightMap, placementMemory, handleTrainingDelta, addLog);
 
   // Keep the known-states counter in sync with the local weight map
   useEffect(() => {
@@ -367,62 +338,6 @@ function App() {
     setPlacementMemory(prev => updatePlacementMemory(prev, playerShipPositions, humanWon, 100));
   }, [winner, playerShipPositions, fetchStats]);
 
-  // Initialize the training Web Worker once on mount
-  useEffect(() => {
-    const worker = new Worker(new URL('./training.worker.js', import.meta.url), { type: 'module' });
-
-    worker.onmessage = (event) => {
-      const { type, delta, completed, elapsed, total, error } = event.data;
-
-      if (type === 'progress') {
-        addLog(`Training batch: ${completed}/${total} games`);
-        return;
-      }
-
-      if (type === 'complete') {
-        addLog(`Training complete: ${completed} games in ${elapsed?.toFixed?.(0)}ms`);
-        setSyntheticGames(prev => prev + (completed || 0));
-        if (delta && Object.keys(delta).length > 0) {
-          const merged = mergeWeightDelta(weightMapRef.current || {}, delta, 8);
-          weightMapRef.current = merged;
-          setWeightMap(merged);
-          fetch(`${API_BASE_URL}/api/merge-weights`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', ...(API_KEY && { 'X-API-Key': API_KEY }) },
-            body: JSON.stringify({ delta, games: completed })
-          })
-            .then(response => response.json())
-            .then(data => {
-              addLog(`Merged weights on server: ${data.states} states`);
-              fetchStats();
-            })
-            .catch(err => addLog(`Failed to merge weights: ${err.message}`));
-        }
-        isTraining.current = false;
-        // Keep training continuously while the game is active
-        scheduleNextTraining(CONFIG.CONTINUOUS_INTERVAL_MS);
-        return;
-      }
-
-      if (type === 'error') {
-        addLog(`Training worker error: ${error}`);
-        isTraining.current = false;
-      }
-    };
-
-    worker.onerror = (err) => {
-      addLog(`Training worker error: ${err.message || err}`);
-      isTraining.current = false;
-    };
-
-    workerRef.current = worker;
-
-    // Begin synthetic training immediately, even before the player places ships
-    scheduleNextTraining(0);
-
-    return () => worker.terminate();
-  }, [addLog]);
-
   // Restore the intro flag from the session so a page refresh does not replay it
   useEffect(() => {
     if (sessionStorage.getItem('introPlayed') === 'true') {
@@ -505,21 +420,6 @@ function App() {
     }, 500);
   };
 
-  // Determine whether a given grid cell belongs to a fully sunk ship
-  const isCellOfSunkShip = (isComputerGrid, row, col) => {
-    if (isComputerGrid) {
-      return computerShipPositions.some(ship => 
-        computerSunkShips.includes(ship.name) &&
-        ship.positions.some(pos => pos.row === row && pos.col === col)
-      );
-    } else {
-      return playerShipPositions.some(ship => 
-        playerSunkShips.includes(ship.name) &&
-        ship.positions.some(pos => pos.row === row && pos.col === col)
-      );
-    }
-  };
-
   // Return the four orthogonal neighbours of a cell, filtering out invalid bounds
   const getAdjacentCells = (row, col) => {
     const adjacent = [];
@@ -530,10 +430,18 @@ function App() {
     return adjacent;
   };
 
+  // Determine whether a friendly cell belongs to a fully sunk ship (used by hunt logic)
+  const isCellOfSunkShip = (row, col) => {
+    return playerShipPositions.some(ship =>
+      playerSunkShips.includes(ship.name) &&
+      ship.positions.some(pos => pos.row === row && pos.col === col)
+    );
+  };
+
   // Pick the next cells to target based on the direction of recent unsunk hits
   const getHuntDirectionTargets = (row, col) => {
     // Look at recent hits to determine ship direction
-    const recentHits = computerMoves.filter(move => move.hit && !isCellOfSunkShip(false, move.row, move.col));
+    const recentHits = computerMoves.filter(move => move.hit && !isCellOfSunkShip(move.row, move.col));
     if (recentHits.length < 2) return getAdjacentCells(row, col);
     
     const lastHit = recentHits[recentHits.length - 1];
@@ -582,7 +490,7 @@ function App() {
       source = 'hunt';
       setComputerHuntTargets(validTargets.slice(1));
     } else {
-      const recentHits = computerMoves.filter(move => move.hit && !isCellOfSunkShip(false, move.row, move.col));
+      const recentHits = computerMoves.filter(move => move.hit && !isCellOfSunkShip(move.row, move.col));
       let fallbackTarget = null;
 
       if (recentHits.length > 0) {
@@ -706,32 +614,6 @@ function App() {
     setIsPlayerTurn(true);
   };
 
-  // Queue the next training batch
-  function scheduleNextTraining(delay = CONFIG.TRAINING_DELAY_MS) {
-    if (isTraining.current) return;
-    if (document.hidden) return;
-
-    isTraining.current = true;
-    if (delay === 0) {
-      addLog('Starting background training immediately');
-    } else {
-      addLog(`Scheduling background training in ${delay}ms`);
-    }
-    setTimeout(() => {
-      if (document.hidden || !workerRef.current) {
-        isTraining.current = false;
-        return;
-      }
-      const currentWeightMap = weightMapRef.current || {};
-      const currentPlacementMemory = placementMemoryRef.current || [];
-      addLog(`Starting background training with ${currentPlacementMemory.length} placement patterns`);
-      workerRef.current.postMessage({
-        weightMap: currentWeightMap,
-        placementMemory: currentPlacementMemory
-      });
-    }, delay);
-  }
-
   const resetGame = () => {
     introPlayedRef.current = false;
     sessionStorage.removeItem('introPlayed');
@@ -755,420 +637,25 @@ function App() {
     setFiredProbabilities({});
   };
 
-  // Build the CSS classes for a grid cell based on its contents and owner
-  const getCellClass = (cellState, isComputerGrid, row, col) => {
-    let baseClass = 'w-6 h-6 border flex items-center justify-center cursor-pointer relative overflow-hidden';
-    const isSunk = isCellOfSunkShip(isComputerGrid, row, col);
-    
-    const move = isComputerGrid 
-      ? playerMoves.find(m => m.row === row && m.col === col)
-      : computerMoves.find(m => m.row === row && m.col === col);
-    
-    if (isComputerGrid) {
-      if (move) {
-        if (isSunk) {
-          baseClass += ' sunk-cell border-red-700';
-        } else if (move.hit) {
-          baseClass += ' hit-cell border-red-500';
-        } else {
-          baseClass += ' miss-cell border-yellow-400';
-        }
-      } else if (gamePhase === GAME_PHASES.GAME_OVER && winner === 'computer' && cellState === CELL_STATES.SHIP) {
-        // Reveal any enemy ships that survived the battle after a defeat
-        baseClass += ' enemy-ship-revealed border-blue-500';
-      } else {
-        baseClass += ' tactical-cell border-green-600/30';
-      }
-    } else {
-      if (move) {
-        if (isSunk) {
-          baseClass += ' sunk-cell border-red-700';
-        } else if (move.hit) {
-          baseClass += ' hit-cell border-red-500';
-        } else {
-          baseClass += ' miss-cell border-yellow-400';
-        }
-      } else if (cellState === CELL_STATES.SHIP) {
-        baseClass += ' ship-cell border-gray-500';
-      } else {
-        baseClass += ' tactical-cell border-green-600/30';
-      }
-    }
-    
-    // Radar glow only on enemy waters for hit/miss/skull cells, never on friendly grid
-    const shouldGlow = isComputerGrid && move;
-    if (shouldGlow) {
-      baseClass += isSunk ? ' radar-glow-sunk' : ' radar-glow';
-    }
-    
-    return baseClass;
-  };
-
-  // Return the icon content (miss marker or skull) for a grid cell
-  const getCellContent = (cellState, isComputerGrid, row, col) => {
-    const isSunk = isCellOfSunkShip(isComputerGrid, row, col);
-    
-    if (isComputerGrid) {
-      const move = playerMoves.find(m => m.row === row && m.col === col);
-      if (move && !move.hit) {
-        return <span className="text-yellow-900 font-bold text-sm">×</span>;
-      }
-      if (move && move.hit && isSunk) {
-        return <span className="skull-icon">☠</span>;
-      }
-    } else {
-      const move = computerMoves.find(m => m.row === row && m.col === col);
-      if (move && !move.hit) {
-        return <span className="text-yellow-900 font-bold text-sm">×</span>;
-      }
-      if (move && move.hit && isSunk) {
-        return <span className="skull-icon">☠</span>;
-      }
-    }
-    return null;
-  };
-
-  // Render a complete 10x10 grid with coordinates and optional radar sweep
-  const renderGrid = (grid, isComputerGrid) => {
-    return (
-      <div className="flex flex-col gap-0.5">
-        {/* Column headers */}
-        <div className="flex justify-center gap-0.5 mb-0.5">
-          <div className="w-5"></div> {/* Corner spacer */}
-          {Array.from({ length: GRID_SIZE }, (_, i) => (
-            <div key={`col-${isComputerGrid ? 'enemy' : 'player'}-${i}`} className="coordinate-label text-center py-0.5 w-5">
-              {String.fromCharCode(65 + i)}
-            </div>
-          ))}
-        </div>
-        
-        <div className="flex gap-0.5">
-          {/* Row numbers */}
-          <div className="flex flex-col gap-0.5 mr-0.5">
-            {Array.from({ length: GRID_SIZE }, (_, i) => (
-              <div key={`row-${isComputerGrid ? 'enemy' : 'player'}-${i}`} className="coordinate-label text-center py-1.5 w-5">
-                {i + 1}
-              </div>
-            ))}
-          </div>
-          
-          {/* Grid */}
-          <div className="relative grid grid-cols-10 gap-0 border-2 border-green-500/30 rounded-lg overflow-hidden radar-grid">
-            {isComputerGrid && <div className="radar-sweep"></div>}
-            {grid.map((row, rowIndex) =>
-              row.map((cell, colIndex) => (
-                <div
-                  key={`${isComputerGrid ? 'enemy' : 'player'}-${rowIndex * GRID_SIZE + colIndex}`}
-                  className={getCellClass(cell, isComputerGrid, rowIndex, colIndex)}
-                  onClick={() => handleCellClick(rowIndex, colIndex, isComputerGrid)}
-                >
-                  {getCellContent(cell, isComputerGrid, rowIndex, colIndex)}
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  // Render a visual ship icon made of squares sized to the ship length
-  const renderShipIcon = (size, isSunk) => {
-    const squares = Array.from({ length: size }, (_, i) => (
-      <div 
-        key={i} 
-        className={`w-1.5 h-3 rounded-sm ${isSunk ? 'bg-red-600' : 'bg-gray-500'}`}
-      ></div>
-    ));
-    return (
-      <div className="flex gap-0.5 items-center">
-        {squares}
-      </div>
-    );
-  };
-
-  // Render the fleet status panel showing each ship's operational state
-  const renderShipStatus = (ships, sunkShips, placedShips, isPlayer) => {
-    return (
-      <div className="operations-panel rounded-lg p-2">
-        <h3 className="text-xs font-semibold text-green-400 mb-2 uppercase tracking-wider">
-          {isPlayer ? 'Friendly Fleet' : 'Enemy Contacts'}
-        </h3>
-        <div className="grid grid-cols-2 gap-1">
-          {ships.map((ship, index) => {
-            const isSunk = sunkShips.includes(ship.name);
-            const isPlaced = placedShips.includes(ship.name);
-            
-            let status = 'pending';
-            if (isSunk) status = 'sunk';
-            else if (isPlaced) status = 'operational';
-            
-            return (
-              <div key={`${isPlayer ? 'player' : 'enemy'}-${index}-${ship.name}-${status}`} className={`ship-status-compact ${status}`}>
-                {renderShipIcon(ship.size, isSunk)}
-                <span className="flex-1 truncate text-xs">{ship.name}</span>
-                <span className="text-xs">
-                  {status === 'pending' ? '⏳' : status === 'operational' ? '✓' : '☠'}
-                </span>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-    );
-  };
-
-  // Render just the firing probability heatmap (used in desktop and mobile views)
-  const renderHeatmap = () => {
-    return (
-      <div className="info-section">
-        <div className="info-section-title">Firing Probability Heatmap</div>
-        <div className="heatmap-grid">
-          {heatMap && heatMap.map((row, r) =>
-            row.map((cell, c) => {
-              const attacked = computerMoves.some(m => m.row === r && m.col === c);
-              const prob = attacked ? (firedProbabilities[`${r}-${c}`] ?? cell.value) : cell.value;
-              const clamped = Math.min(Math.max(prob, 0), 1);
-              const hue = 200 - clamped * 160; // cyan (200) -> red (40)
-              const bg = `hsl(${hue}, ${attacked ? '70%' : '100%'}, ${attacked ? '35%' : '50%'})`;
-              const label = `${Math.round(clamped * 100)}`;
-              return (
-                <div
-                  key={`heat-${r}-${c}`}
-                  className="heatmap-cell"
-                  style={{ backgroundColor: bg }}
-                  title={`[${r},${c}] ${attacked ? 'fired at' : 'current'} probability: ${label}%`}
-                >
-                  {label}
-                </div>
-              );
-            })
-          )}
-        </div>
-        <div className="text-[10px] text-cyan-400/60 mt-1 text-center">
-          Overlay shows the AI's estimated win probability for each friendly cell.
-        </div>
-      </div>
-    );
-  };
-
-  // Render the tactical information console with live logs and heatmap
-  const renderInfoPanel = () => {
-    const topActions = computerDecision?.topActions || [];
-
-    return (
-      <div className="info-panel">
-        <div className="info-panel-header">
-          <span className="text-cyan-300 font-bold tracking-widest text-xs">COMPUTER TACTICAL CONSOLE</span>
-          <button
-            onClick={() => setShowInfoPanel(false)}
-            className="text-cyan-500 hover:text-cyan-300 text-xs"
-            aria-label="Close tactical console"
-          >
-            [ CLOSE ]
-          </button>
-        </div>
-
-        <div className="info-panel-content">
-          {/* Left column: personality, thinking, stats, log */}
-          <div className="flex flex-col gap-3">
-            {/* Humour dial */}
-            <div className="info-section">
-              <div className="info-section-title">Computer Personality</div>
-              <div className="flex items-center gap-2">
-                <input
-                  id="humor-range"
-                  type="range"
-                  min="0"
-                  max="3"
-                  step="1"
-                  value={humorLevel}
-                  onChange={(e) => setHumorLevel(parseInt(e.target.value, 10))}
-                  className="w-full accent-cyan-400"
-                  aria-label="Humour level"
-                />
-              </div>
-              <div className="flex justify-between text-[10px] text-cyan-300/70 mt-1">
-                {HUMOR_LABELS.map((label, i) => (
-                  <span key={label} className={i === humorLevel ? 'text-cyan-100 font-bold' : ''}>{label}</span>
-                ))}
-              </div>
-            </div>
-
-            {/* Current computer thinking */}
-            <div className="info-section">
-              <div className="info-section-title">Current Thinking</div>
-              {computerDecision ? (
-                <div className="text-xs italic text-cyan-100 whitespace-pre-line leading-relaxed">
-                  {computerDecision.thinking}
-                </div>
-              ) : (
-                <div className="text-cyan-600/60 text-xs italic">The opponent is gathering itself...</div>
-              )}
-            </div>
-
-            {/* Game statistics */}
-            <div className="info-section">
-              <div className="info-section-title">Combat Record</div>
-              <div className="grid grid-cols-2 gap-2 text-xs">
-                <div className="text-cyan-300/80">Human games:</div>
-                <div className="text-cyan-100 text-right">{humanGames}</div>
-                <div className="text-cyan-300/80">Synthetic games:</div>
-                <div className="text-cyan-100 text-right">{syntheticGames}</div>
-                <div className="text-cyan-300/80">Known states:</div>
-                <div className="text-cyan-100 text-right">{knownStates}</div>
-              </div>
-            </div>
-
-            {/* Live console feed */}
-            <div className="info-section">
-              <div className="info-section-title">Training &amp; Event Log</div>
-              <div ref={consoleFeedRef} className="console-feed">
-                {consoleLog.length === 0 ? (
-                  <div className="text-cyan-600/60 text-xs italic">Awaiting telemetry...</div>
-                ) : (
-                  [...consoleLog].reverse().map((line, i) => {
-                    const originalIndex = consoleLog.length - 1 - i;
-                    return <div key={`log-${originalIndex}`} className="console-line">{line}</div>;
-                  })
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* Right column: heatmap, recommendations, decision */}
-          <div className="flex flex-col gap-3">
-            {/* Probability heatmap */}
-            {renderHeatmap()}
-
-            {/* Top recommendations */}
-            {topActions.length > 0 && (
-              <div className="info-section">
-                <div className="info-section-title">Top Recommendations</div>
-                {topActions.map((action, i) => (
-                  <div key={`rec-${i}`} className="text-[10px] font-mono text-cyan-200/80">
-                    #{i + 1}: [{action[0]},{action[1]}] win {(action[2] * 100).toFixed(1)}% (n={action[4]})
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* Last computer decision */}
-            <div className="info-section">
-              <div className="info-section-title">Last Enemy Decision</div>
-              {computerDecision && typeof computerDecision.row === 'number' ? (
-                <div className="text-xs space-y-1">
-                  <div className="text-cyan-300">Target: <span className="text-white">[{computerDecision.row},{computerDecision.col}]</span></div>
-                  <div className="text-cyan-300/80">Source: <span className="text-cyan-100 uppercase">{computerDecision.source}</span></div>
-                  <div className="text-cyan-300/60 font-mono text-[10px] break-all">State: {computerDecision.boardKey}</div>
-                </div>
-              ) : (
-                <div className="text-cyan-600/60 text-xs italic">No enemy action recorded yet.</div>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  };
-
   return (
     <div className="screen-fit operations-room">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row items-center justify-between gap-2 px-4 py-2 shrink-0 operations-panel rounded-lg">
-        <div className="flex items-baseline gap-2">
-          <h1 className="text-xl sm:text-2xl font-bold text-green-400 tracking-wider font-mono">
-            Battleships - RL
-          </h1>
-          <span className="text-[10px] text-green-600 font-mono">v{APP_VERSION}</span>
-        </div>
-        <div className="flex items-center gap-2 text-xs text-green-600 font-mono">
-          <button
-            onClick={() => setSoundOn(prev => !prev)}
-            className="tactical-button p-2 rounded"
-            aria-label={soundOn ? 'Turn sound off' : 'Turn sound on'}
-          >
-            <svg viewBox="0 0 24 24" className="w-4 h-4" aria-hidden="true">
-              {soundOn ? (
-                <>
-                  <path d="M3 9v6h4l5 4V5L7 9H3z" fill="currentColor" className="text-green-300" />
-                  <path d="M15 10.5a3 3 0 0 1 0 3M18.5 7.5a7 7 0 0 1 0 9" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="text-green-300" />
-                </>
-              ) : (
-                <>
-                  <path d="M3 9v6h4l5 4V5L7 9H3z" fill="currentColor" className="text-green-300" />
-                  <circle cx="12" cy="12" r="9" fill="none" stroke="#ef4444" strokeWidth="2" />
-                  <line x1="6" y1="6" x2="18" y2="18" stroke="#ef4444" strokeWidth="2" strokeLinecap="round" />
-                </>
-              )}
-            </svg>
-          </button>
-          <button
-            onClick={() => setShowInfoPanel(prev => !prev)}
-            className="tactical-button px-3 py-2 rounded text-xs uppercase tracking-wider"
-            aria-label={showInfoPanel ? 'Close computer tactical console' : 'Open computer tactical console'}
-          >
-            {showInfoPanel ? 'Close Console' : 'Console'}
-          </button>
-        </div>
-      </div>
+      <Header
+        soundOn={soundOn}
+        setSoundOn={setSoundOn}
+        showInfoPanel={showInfoPanel}
+        setShowInfoPanel={setShowInfoPanel}
+      />
       
-      {/* Status Bar */}
-      <div className="status-bar">
-        <div className="flex items-center gap-4">
-          {gamePhase === GAME_PHASES.PLACEMENT && (
-            <>
-              <span className="text-green-300 text-sm">
-                DEPLOY: {SHIPS[currentShipIndex].name} ({SHIPS[currentShipIndex].size})
-              </span>
-              <button
-                onClick={() => setOrientation(
-                  orientation === ORIENTATIONS.HORIZONTAL 
-                    ? ORIENTATIONS.VERTICAL 
-                    : ORIENTATIONS.HORIZONTAL
-                )}
-                className="tactical-button px-3 py-1 rounded text-xs"
-              >
-                {orientation === 'horizontal' ? 'HORIZ' : 'VERT'}
-              </button>
-              <button
-                onClick={handleRandomPlacement}
-                disabled={currentShipIndex >= SHIPS.length}
-                className="tactical-button px-3 py-1 rounded text-xs disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                🎲 RANDOM
-              </button>
-            </>
-          )}
-          {gamePhase === GAME_PHASES.PLAYING && (
-            <span className="text-green-300 text-sm">
-              {isPlayerTurn ? "⚔️ YOUR TURN" : "🤖 ENEMY TURN"}
-            </span>
-          )}
-          {gamePhase === GAME_PHASES.GAME_OVER && (
-            <span className={`text-sm font-bold ${winner === 'player' ? 'text-green-400' : 'text-red-400'}`}>
-              {winner === 'player' ? '🎉 MISSION ACCOMPLISHED' : '💥 MISSION FAILED'}
-            </span>
-          )}
-        </div>
-        
-        <div className="flex items-center gap-2">
-          <button
-            onClick={resetGame}
-            className="tactical-button px-3 py-1 rounded text-xs"
-          >
-            🔄 RESET
-          </button>
-          {gamePhase === GAME_PHASES.GAME_OVER && (
-            <button
-              onClick={resetGame}
-              className="tactical-button px-3 py-1 rounded text-xs"
-            >
-              🎯 NEW MISSION
-            </button>
-          )}
-        </div>
-      </div>
+      <StatusBar
+        gamePhase={gamePhase}
+        currentShipIndex={currentShipIndex}
+        orientation={orientation}
+        setOrientation={setOrientation}
+        handleRandomPlacement={handleRandomPlacement}
+        isPlayerTurn={isPlayerTurn}
+        winner={winner}
+        resetGame={resetGame}
+      />
       
       {/* Placement Instructions */}
       {gamePhase === GAME_PHASES.PLACEMENT && (
@@ -1185,31 +672,48 @@ function App() {
           /* Mobile layout: enemy waters, friendly waters, then the full tactical console */
           <div className="flex flex-col items-center gap-4 w-full">
             {gamePhase !== GAME_PHASES.PLACEMENT && (
-              <div className="flex flex-col items-center gap-2 w-full">
-                <h3 className="text-sm font-semibold text-green-400 uppercase tracking-wider">
-                  Enemy Waters
-                </h3>
-                {gamePhase === GAME_PHASES.PLAYING && playerMoves.length === 0 && (
-                  <div className="text-xs text-green-300 bg-gray-800/80 px-3 py-1 rounded border border-green-500/30 animate-pulse">
-                    🎯 Click any square to fire a missile
-                  </div>
-                )}
-                {renderGrid(computerGrid, true)}
-                {renderShipStatus(SHIPS, computerSunkShips, gamePhase === GAME_PHASES.PLAYING ? SHIPS.map(s => s.name) : [], false)}
-              </div>
+              <GameGrid
+                title="Enemy Waters"
+                prompt={gamePhase === GAME_PHASES.PLAYING && playerMoves.length === 0 ? '🎯 Click any square to fire a missile' : null}
+                grid={computerGrid}
+                moves={playerMoves}
+                shipPositions={computerShipPositions}
+                sunkShips={computerSunkShips}
+                placedShips={gamePhase === GAME_PHASES.PLAYING ? SHIPS.map(s => s.name) : []}
+                isComputerGrid={true}
+                revealShips={gamePhase === GAME_PHASES.GAME_OVER && winner === 'computer'}
+                onCellClick={handleCellClick}
+              />
             )}
 
-            <div className="flex flex-col items-center gap-2 w-full">
-              <h3 className="text-sm font-semibold text-green-400 uppercase tracking-wider">
-                Friendly Waters
-              </h3>
-              {renderGrid(playerGrid, false)}
-              {renderShipStatus(SHIPS, playerSunkShips, playerPlacedShips, true)}
-            </div>
+            <GameGrid
+              title="Friendly Waters"
+              grid={playerGrid}
+              moves={computerMoves}
+              shipPositions={playerShipPositions}
+              sunkShips={playerSunkShips}
+              placedShips={playerPlacedShips}
+              isComputerGrid={false}
+              revealShips={false}
+              onCellClick={handleCellClick}
+            />
 
             {showInfoPanel && (
               <div className="w-full">
-                {renderInfoPanel()}
+                <InfoPanel
+                  humorLevel={humorLevel}
+                  setHumorLevel={setHumorLevel}
+                  computerDecision={computerDecision}
+                  humanGames={humanGames}
+                  syntheticGames={syntheticGames}
+                  knownStates={knownStates}
+                  consoleLog={consoleLog}
+                  consoleFeedRef={consoleFeedRef}
+                  heatMap={heatMap}
+                  computerMoves={computerMoves}
+                  firedProbabilities={firedProbabilities}
+                  onClose={() => setShowInfoPanel(false)}
+                />
               </div>
             )}
           </div>
@@ -1218,33 +722,52 @@ function App() {
           <>
             <div className="flex flex-col md:flex-row items-start justify-center gap-4 md:gap-6 flex-1 min-w-0">
               {/* Player Grid */}
-              <div className="flex flex-col items-center gap-2">
-                <h3 className="text-sm font-semibold text-green-400 uppercase tracking-wider">
-                  Friendly Waters
-                </h3>
-                {renderGrid(playerGrid, false)}
-                {renderShipStatus(SHIPS, playerSunkShips, playerPlacedShips, true)}
-              </div>
+              <GameGrid
+                title="Friendly Waters"
+                grid={playerGrid}
+                moves={computerMoves}
+                shipPositions={playerShipPositions}
+                sunkShips={playerSunkShips}
+                placedShips={playerPlacedShips}
+                isComputerGrid={false}
+                revealShips={false}
+                onCellClick={handleCellClick}
+              />
 
               {/* Computer Grid */}
               {gamePhase !== GAME_PHASES.PLACEMENT && (
-                <div className="flex flex-col items-center gap-2">
-                  <h3 className="text-sm font-semibold text-green-400 uppercase tracking-wider">
-                    Enemy Waters
-                  </h3>
-                  {gamePhase === GAME_PHASES.PLAYING && playerMoves.length === 0 && (
-                    <div className="text-xs text-green-300 bg-gray-800/80 px-3 py-1 rounded border border-green-500/30 animate-pulse">
-                      🎯 Click any square to fire a missile
-                    </div>
-                  )}
-                  {renderGrid(computerGrid, true)}
-                  {renderShipStatus(SHIPS, computerSunkShips, gamePhase === GAME_PHASES.PLAYING ? SHIPS.map(s => s.name) : [], false)}
-                </div>
+                <GameGrid
+                  title="Enemy Waters"
+                  prompt={gamePhase === GAME_PHASES.PLAYING && playerMoves.length === 0 ? '🎯 Click any square to fire a missile' : null}
+                  grid={computerGrid}
+                  moves={playerMoves}
+                  shipPositions={computerShipPositions}
+                  sunkShips={computerSunkShips}
+                  placedShips={gamePhase === GAME_PHASES.PLAYING ? SHIPS.map(s => s.name) : []}
+                  isComputerGrid={true}
+                  revealShips={gamePhase === GAME_PHASES.GAME_OVER && winner === 'computer'}
+                  onCellClick={handleCellClick}
+                />
               )}
             </div>
 
             {/* Tactical info console */}
-            {showInfoPanel && renderInfoPanel()}
+            {showInfoPanel && (
+              <InfoPanel
+                humorLevel={humorLevel}
+                setHumorLevel={setHumorLevel}
+                computerDecision={computerDecision}
+                humanGames={humanGames}
+                syntheticGames={syntheticGames}
+                knownStates={knownStates}
+                consoleLog={consoleLog}
+                consoleFeedRef={consoleFeedRef}
+                heatMap={heatMap}
+                computerMoves={computerMoves}
+                firedProbabilities={firedProbabilities}
+                onClose={() => setShowInfoPanel(false)}
+              />
+            )}
           </>
         )}
       </div>
