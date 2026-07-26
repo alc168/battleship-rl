@@ -1182,7 +1182,7 @@ function App() {
       {/* Game Area */}
       <div className="game-area">
         {isMobile ? (
-          /* Mobile layout: enemy waters on top, optional heatmap, friendly waters below */
+          /* Mobile layout: enemy waters, friendly waters, then the full tactical console */
           <div className="flex flex-col items-center gap-4 w-full">
             {gamePhase !== GAME_PHASES.PLACEMENT && (
               <div className="flex flex-col items-center gap-2 w-full">
@@ -1199,12 +1199,6 @@ function App() {
               </div>
             )}
 
-            {showInfoPanel && (
-              <div className="w-full max-w-md">
-                {renderHeatmap()}
-              </div>
-            )}
-
             <div className="flex flex-col items-center gap-2 w-full">
               <h3 className="text-sm font-semibold text-green-400 uppercase tracking-wider">
                 Friendly Waters
@@ -1212,6 +1206,12 @@ function App() {
               {renderGrid(playerGrid, false)}
               {renderShipStatus(SHIPS, playerSunkShips, playerPlacedShips, true)}
             </div>
+
+            {showInfoPanel && (
+              <div className="w-full">
+                {renderInfoPanel()}
+              </div>
+            )}
           </div>
         ) : (
           /* Desktop layout: friendly and enemy grids side by side with full console */
