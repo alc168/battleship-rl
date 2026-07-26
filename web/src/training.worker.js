@@ -35,6 +35,7 @@ function selectPattern(placementMemory) {
 
 function buildDelta(games, weightMap, placementMemory) {
   const delta = {};
+  let abortedGames = 0;
 
   for (let g = 0; g < games; g++) {
     // Shooter (policy side) ships
@@ -53,7 +54,7 @@ function buildDelta(games, weightMap, placementMemory) {
 
     // Opponent ships
     const oppResult = placeShipsRandomlyWithTracking(createEmptyGrid());
-    const opponentGrid = oppResult.grid;
+    let opponentGrid = oppResult.grid;
     const opponentShips = oppResult.shipPositions;
 
     const shooterMoves = [];
@@ -64,8 +65,13 @@ function buildDelta(games, weightMap, placementMemory) {
 
     while (true) {
       if (++moveCount > MAX_MOVES_PER_GAME) {
-        console.warn('Game', g, 'hit move limit; aborting as draw');
+        abortedGames++;
         shooterWon = false;
+        break;
+      }
+
+      if (checkWinCondition(opponentGrid)) {
+        shooterWon = true;
         break;
       }
 
@@ -78,7 +84,7 @@ function buildDelta(games, weightMap, placementMemory) {
       }
 
       if (!action) {
-        console.warn('Game', g, 'no unattacked cells left for shooter');
+        abortedGames++;
         shooterWon = false;
         break;
       }
@@ -86,20 +92,27 @@ function buildDelta(games, weightMap, placementMemory) {
       trace.push({ boardKey, row: action.row, col: action.col });
       const res = processAttack(opponentGrid, action.row, action.col);
       shooterMoves.push({ row: action.row, col: action.col, hit: res.hit });
+      opponentGrid = res.grid;
 
       if (checkWinCondition(res.grid)) {
         shooterWon = true;
         break;
       }
 
+      if (checkWinCondition(shooterGrid)) {
+        shooterWon = false;
+        break;
+      }
+
       let oppAction = getUnattackedMove(opponentMoves);
       if (!oppAction) {
-        console.warn('Game', g, 'no unattacked cells left for opponent');
+        abortedGames++;
         shooterWon = true;
         break;
       }
       const oppRes = processAttack(shooterGrid, oppAction.row, oppAction.col);
       opponentMoves.push({ row: oppAction.row, col: oppAction.col, hit: oppRes.hit });
+      shooterGrid = oppRes.grid;
 
       if (checkWinCondition(oppRes.grid)) {
         shooterWon = false;
@@ -120,6 +133,10 @@ function buildDelta(games, weightMap, placementMemory) {
     if ((g + 1) % CONFIG.CHUNK_SIZE === 0) {
       self.postMessage({ type: 'progress', completed: g + 1, total: games });
     }
+  }
+
+  if (abortedGames > 0) {
+    console.warn('Training aborted', abortedGames, 'of', games, 'games as draws');
   }
 
   // Convert to compact array format and prune before sending
