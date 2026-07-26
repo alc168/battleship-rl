@@ -56,6 +56,7 @@ function App() {
   const [consoleLog, setConsoleLog] = useState([]);
   const [computerDecision, setComputerDecision] = useState(null);
   const [heatMap, setHeatMap] = useState(null);
+  const [firedProbabilities, setFiredProbabilities] = useState({});
 
   // Web Worker reference for background training
   const workerRef = useRef(null);
@@ -430,6 +431,10 @@ function App() {
       newHeatMap.push(heatRow);
     }
     setHeatMap(newHeatMap);
+    setFiredProbabilities(prev => ({
+      ...prev,
+      [`${row}-${col}`]: newHeatMap[row][col].value
+    }));
 
     const winRate = chosenRecommendation ? chosenRecommendation[2] : 0;
     const reasonText = source === 'hunt'
@@ -516,6 +521,9 @@ function App() {
     setPlayerShipPositions([]);
     setComputerShipPositions([]);
     setComputerHuntTargets([]);
+    setComputerDecision(null);
+    setHeatMap(null);
+    setFiredProbabilities({});
   };
 
   // Build the CSS classes for a grid cell based on its contents and owner
@@ -688,7 +696,7 @@ function App() {
     return (
       <div className="info-panel">
         <div className="info-panel-header">
-          <span className="text-cyan-300 font-bold tracking-widest text-xs">TACTICAL CONSOLE</span>
+          <span className="text-cyan-300 font-bold tracking-widest text-xs">COMPUTER TACTICAL CONSOLE</span>
           <button
             onClick={() => setShowInfoPanel(false)}
             className="text-cyan-500 hover:text-cyan-300 text-xs"
@@ -744,19 +752,20 @@ function App() {
             <div className="heatmap-grid">
               {heatMap && heatMap.map((row, r) =>
                 row.map((cell, c) => {
-                  const intensity = Math.min(cell.value, 1);
-                  const alpha = cell.attacked ? 0.05 : 0.15 + intensity * 0.65;
-                  const bg = cell.attacked
-                    ? 'rgba(100,116,139,0.4)'
-                    : `rgba(6,182,212,${alpha})`;
+                  const attacked = computerMoves.some(m => m.row === r && m.col === c);
+                  const prob = attacked ? (firedProbabilities[`${r}-${c}`] ?? cell.value) : cell.value;
+                  const clamped = Math.min(Math.max(prob, 0), 1);
+                  const hue = 200 - clamped * 160; // cyan (200) -> red (40)
+                  const bg = `hsl(${hue}, ${attacked ? '70%' : '100%'}, ${attacked ? '35%' : '50%'})`;
+                  const label = `${Math.round(clamped * 100)}`;
                   return (
                     <div
                       key={`heat-${r}-${c}`}
                       className="heatmap-cell"
                       style={{ backgroundColor: bg }}
-                      title={`[${r},${c}] ${cell.attacked ? 'attacked' : `${(cell.value * 100).toFixed(0)}%`}`}
+                      title={`[${r},${c}] ${attacked ? 'fired at' : 'current'} probability: ${label}%`}
                     >
-                      {cell.attacked ? '·' : cell.value > 0 ? `${(cell.value * 100).toFixed(0)}` : ''}
+                      {label}
                     </div>
                   );
                 })
@@ -776,7 +785,7 @@ function App() {
       {/* Header */}
       <div className="header-compact relative">
         <h1 className="text-2xl font-bold text-green-400 tracking-wider font-mono">
-          battleship-rl
+          Battleships - RL
         </h1>
         <div className="absolute top-0 right-4 flex items-center gap-3 text-xs text-green-600 font-mono">
           <span>v{APP_VERSION}</span>

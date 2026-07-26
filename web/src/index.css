@@ -381,9 +381,9 @@
   }
 
   .heatmap-cell {
-    @apply flex items-center justify-center text-[8px] font-mono text-white/90;
+    @apply flex items-center justify-center text-[6px] leading-none font-mono text-white/95;
     border-radius: 2px;
     aspect-ratio: 1;
-    text-shadow: 0 0 2px rgba(0, 0, 0, 0.8);
+    text-shadow: 0 0 2px rgba(0, 0, 0, 0.9);
   }
 }
