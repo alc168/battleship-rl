@@ -1049,14 +1049,20 @@ function App() {
             className="tactical-button px-3 py-1 rounded text-xs"
             aria-label={soundOn ? 'Turn sound off' : 'Turn sound on'}
           >
-            {soundOn ? (
-              '🔊'
-            ) : (
-              <span className="relative inline-block">
-                <span>🔊</span>
-                <span className="absolute inset-0 flex items-center justify-center text-red-500 text-base leading-none pointer-events-none">�</span>
-              </span>
-            )}
+            <svg viewBox="0 0 24 24" className="w-4 h-4" aria-hidden="true">
+                {soundOn ? (
+                  <>
+                    <path d="M3 9v6h4l5 4V5L7 9H3z" fill="currentColor" className="text-green-300" />
+                    <path d="M15 10.5a3 3 0 0 1 0 3M18.5 7.5a7 7 0 0 1 0 9" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="text-green-300" />
+                  </>
+                ) : (
+                  <>
+                    <path d="M3 9v6h4l5 4V5L7 9H3z" fill="currentColor" className="text-green-300" />
+                    <circle cx="12" cy="12" r="9" fill="none" stroke="#ef4444" strokeWidth="2" />
+                    <line x1="6" y1="6" x2="18" y2="18" stroke="#ef4444" strokeWidth="2" strokeLinecap="round" />
+                  </>
+                )}
+              </svg>
           </button>
           <button
             onClick={() => setShowInfoPanel(prev => !prev)}
