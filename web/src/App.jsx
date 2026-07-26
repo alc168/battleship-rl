@@ -173,12 +173,6 @@ function App() {
       .catch(error => console.error('Failed to load stats:', error));
   }, []);
 
-  // Start background training as soon as the weight map is loaded
-  useEffect(() => {
-    if (!weightMap || isTraining.current) return;
-    scheduleNextTraining(0);
-  }, [weightMap]);
-
   // Keep the known-states counter in sync with the local weight map
   useEffect(() => {
     setKnownStates(weightMap ? Object.keys(weightMap).length : 0);
@@ -359,6 +353,10 @@ function App() {
     };
 
     workerRef.current = worker;
+
+    // Begin synthetic training immediately, even before the player places ships
+    scheduleNextTraining(0);
+
     return () => worker.terminate();
   }, [addLog]);
 
@@ -616,7 +614,6 @@ function App() {
   // Queue the next training batch
   function scheduleNextTraining(delay = CONFIG.TRAINING_DELAY_MS) {
     if (isTraining.current) return;
-    if (!weightMapRef.current) return;
     if (document.hidden) return;
 
     isTraining.current = true;
@@ -630,10 +627,12 @@ function App() {
         isTraining.current = false;
         return;
       }
-      addLog(`Starting background training with ${placementMemoryRef.current?.length || 0} placement patterns`);
+      const currentWeightMap = weightMapRef.current || {};
+      const currentPlacementMemory = placementMemoryRef.current || [];
+      addLog(`Starting background training with ${currentPlacementMemory.length} placement patterns`);
       workerRef.current.postMessage({
-        weightMap: weightMapRef.current,
-        placementMemory: placementMemoryRef.current
+        weightMap: currentWeightMap,
+        placementMemory: currentPlacementMemory
       });
     }, delay);
   }

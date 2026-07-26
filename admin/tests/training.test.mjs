@@ -7,13 +7,13 @@ globalThis.postMessage = (msg) => messages.push(msg);
 
 await import('../../web/src/training.worker.js');
 
-test('training worker completes a 500-game batch and returns a delta', async () => {
+test('training worker completes a 250-game batch and returns a delta', async () => {
   messages.length = 0;
   await globalThis.onmessage({ data: { weightMap: {}, placementMemory: [] } });
 
   const complete = messages.find(m => m.type === 'complete');
   expect(complete).toBeDefined();
-  expect(complete.completed).toBe(500);
+  expect(complete.completed).toBe(250);
   expect(complete.elapsed).toBeGreaterThan(0);
   expect(typeof complete.delta).toBe('object');
 

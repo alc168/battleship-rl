@@ -10,7 +10,7 @@
 
 export const PRESETS = {
   COST_FIRST: {
-    GAMES_PER_BATCH: 500,           // larger batch; one KV write per batch
+    GAMES_PER_BATCH: 250,           // larger batch; one KV write per batch
     CHUNK_SIZE: 50,                 // report progress every 50 games
     UPLOAD_INTERVAL_BATCHES: 1,     // one API write per completed batch
     MAX_ACTIONS_PER_STATE: 20,      // more candidate cells per known state
@@ -24,7 +24,7 @@ export const PRESETS = {
     ENABLE_ON_MOBILE: false         // skip on mobile to save battery
   },
   EXPERIENCE_FIRST: {
-    GAMES_PER_BATCH: 500,
+    GAMES_PER_BATCH: 250,
     CHUNK_SIZE: 50,
     UPLOAD_INTERVAL_BATCHES: 1,
     MAX_ACTIONS_PER_STATE: 20,
