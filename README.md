@@ -216,8 +216,8 @@ A dedicated test suite lives in `admin/`. It runs on demand, validates every com
 
 | Component | Coverage | SOC 2 control |
 |---|---|---|
-| **Game logic** | Grid creation, placement, attacks, win detection, ship sinking, board keys, AI move selection | CC7.2 |
-| **Training worker** | 500-game batch completes, progress events emitted, delta returned | CC7.2 |
+| **Game logic** | Grid creation, placement, attacks, win detection, ship sinking, board keys, AI move selection, incomplete-pattern handling | CC7.2 |
+| **Training worker** | 500-game batch completes, symmetry augmentation, progress events emitted, delta returned | CC7.2 |
 | **Worker API** | `weight-map`, `top-layouts`, `stats` availability; `record` and `merge-weights` success/failure cases | A1.2, CC7.2 |
 | **Authentication** | Missing/invalid API keys rejected on write endpoints | CC6.1 |
 | **Input validation** | Oversized/malformed payloads rejected | CC6.6 |
@@ -227,7 +227,7 @@ A dedicated test suite lives in `admin/`. It runs on demand, validates every com
 ### Latest results
 
 ```text
-30/30 passed in 7.83s
+36/36 passed in 14.56s
 0 failed, 0 skipped
 ```
 

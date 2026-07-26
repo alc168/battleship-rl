@@ -174,11 +174,18 @@ function App() {
       const fallback = seedPlacementMemory(1);
       pattern = fallback[0]?.pattern || [];
     }
-    const result = applyPlacementPattern(pattern);
+    let result = applyPlacementPattern(pattern);
+
+    // Guard against malformed or incomplete placement patterns (e.g. test data with fewer ships)
+    if (result.shipPositions.length !== SHIPS.length) {
+      addLog('Placement pattern was incomplete; falling back to random computer placement.');
+      result = placeShipsRandomlyWithTracking(createEmptyGrid());
+    }
+
     setComputerGrid(result.grid);
     setComputerShipPositions(result.shipPositions);
     setGamePhase(GAME_PHASES.PLAYING);
-  }, [placementMemory]);
+  }, [placementMemory, addLog]);
 
   // Randomly place any ships not yet deployed, then start the game
   const handleRandomPlacement = useCallback(() => {
@@ -980,37 +987,40 @@ function App() {
       
       {/* Game Area */}
       <div className="game-area">
-        {/* Player Grid */}
-        <div className="flex flex-col items-center gap-2">
-          <h3 className="text-sm font-semibold text-green-400 uppercase tracking-wider">
-            Friendly Waters
-          </h3>
-          {renderGrid(playerGrid, false)}
-          {renderShipStatus(SHIPS, playerSunkShips, playerPlacedShips, true)}
-        </div>
-        
-        {/* Computer Grid */}
-        {gamePhase !== GAME_PHASES.PLACEMENT && (
+        {/* Game boards column */}
+        <div className="flex flex-col md:flex-row items-start justify-center gap-4 md:gap-6 flex-1 min-w-0">
+          {/* Player Grid */}
           <div className="flex flex-col items-center gap-2">
             <h3 className="text-sm font-semibold text-green-400 uppercase tracking-wider">
-              Enemy Waters
+              Friendly Waters
             </h3>
-            {gamePhase === GAME_PHASES.PLAYING && playerMoves.length === 0 && (
-              <div className="text-xs text-green-300 bg-gray-800/80 px-3 py-1 rounded border border-green-500/30 animate-pulse">
-                🎯 Click any square to fire a missile
-              </div>
-            )}
-            {renderGrid(computerGrid, true)}
-            {renderShipStatus(SHIPS, computerSunkShips, gamePhase === GAME_PHASES.PLAYING ? SHIPS.map(s => s.name) : [], false)}
+            {renderGrid(playerGrid, false)}
+            {renderShipStatus(SHIPS, playerSunkShips, playerPlacedShips, true)}
           </div>
-        )}
+
+          {/* Computer Grid */}
+          {gamePhase !== GAME_PHASES.PLACEMENT && (
+            <div className="flex flex-col items-center gap-2">
+              <h3 className="text-sm font-semibold text-green-400 uppercase tracking-wider">
+                Enemy Waters
+              </h3>
+              {gamePhase === GAME_PHASES.PLAYING && playerMoves.length === 0 && (
+                <div className="text-xs text-green-300 bg-gray-800/80 px-3 py-1 rounded border border-green-500/30 animate-pulse">
+                  🎯 Click any square to fire a missile
+                </div>
+              )}
+              {renderGrid(computerGrid, true)}
+              {renderShipStatus(SHIPS, computerSunkShips, gamePhase === GAME_PHASES.PLAYING ? SHIPS.map(s => s.name) : [], false)}
+            </div>
+          )}
+        </div>
 
         {/* Tactical info console */}
         {showInfoPanel && renderInfoPanel()}
       </div>
       
       {/* Legend */}
-      <div className="h-12 flex items-center justify-center gap-4 operations-panel rounded-lg px-4">
+      <div className="h-12 flex items-center justify-center gap-4 operations-panel rounded-lg px-4 shrink-0">
         {SHIPS.map((ship) => (
           <div key={`legend-${ship.name}`} className="flex items-center gap-1">
             {renderShipIcon(ship.size, false)}

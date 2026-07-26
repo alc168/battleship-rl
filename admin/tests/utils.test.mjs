@@ -14,7 +14,10 @@ import {
   getTopPlacementPatterns,
   applyPlacementPattern,
   updatePlacementMemory,
-  mergeWeightDelta
+  mergeWeightDelta,
+  seedPlacementMemory,
+  selectPlacementPattern,
+  generateRandomPlacementPattern
 } from '../../web/src/utils.js';
 
 test('createEmptyGrid returns 10x10 grid of EMPTY cells', () => {
@@ -160,3 +163,50 @@ test('mergeWeightDelta combines and ranks actions', () => {
   expect(merged.state[0][3]).toBe(11); // wins
   expect(merged.state[0][4]).toBe(12); // samples
 }, { component: 'AI policy', control: 'CC7.2' });
+
+test('applyPlacementPattern with an empty pattern produces no ships', () => {
+  const { grid, shipPositions } = applyPlacementPattern([]);
+  expect(shipPositions.length).toBe(0);
+  expect(grid.flat().every(c => c === CELL_STATES.EMPTY)).toBe(true);
+}, { component: 'Game logic', control: 'CC7.2' });
+
+test('getAiMove falls back to empty_board for sparse unknown states', () => {
+  const emptyKey = '0'.repeat(100);
+  const aiPolicy = {
+    empty_board: [[0, 1, 0.6, 10, 10]]
+  };
+  const move = getAiMove(emptyKey, aiPolicy, []);
+  expect(move).toEqual({ row: 0, col: 1, source: 'empty_board', key: 'empty_board' });
+}, { component: 'AI policy', control: 'CC7.2' });
+
+test('getAiMove generalises from the closest known state', () => {
+  const known = '0'.repeat(100);
+  const query = known.split('');
+  query[0] = '1'; // one miss different
+  const aiPolicy = {
+    [known]: [[5, 5, 0.8, 10, 10]]
+  };
+  const move = getAiMove(query.join(''), aiPolicy, []);
+  expect(move).toEqual({ row: 5, col: 5, source: 'closest', key: known });
+}, { component: 'AI policy', control: 'CC7.2' });
+
+test('generateRandomPlacementPattern produces a full 5-ship layout', () => {
+  const pattern = generateRandomPlacementPattern();
+  expect(pattern).toBeDefined();
+  expect(pattern.length).toBe(5);
+  expect(pattern.reduce((sum, s) => sum + s.positions.length, 0)).toBe(17);
+}, { component: 'Placement memory', control: 'CC7.2' });
+
+test('selectPlacementPattern returns a valid pattern from memory', () => {
+  const pattern = generateRandomPlacementPattern();
+  const memory = [{ pattern, wins: 10, games: 10, score: 10 }];
+  const selected = selectPlacementPattern(memory);
+  expect(selected).toEqual(pattern);
+}, { component: 'Placement memory', control: 'CC7.2' });
+
+test('one hit does not win a game with five ships', () => {
+  const { grid, shipPositions } = placeShipsRandomlyWithTracking(createEmptyGrid());
+  expect(checkWinCondition(grid)).toBe(false);
+  const { grid: g1 } = processAttack(grid, shipPositions[0].positions[0].row, shipPositions[0].positions[0].col);
+  expect(checkWinCondition(g1)).toBe(false);
+}, { component: 'Game logic', control: 'CC7.2' });
