@@ -335,3 +335,37 @@ export const updatePlacementMemory = (memory, humanPlacement, humanWon, maxSize 
 
   return next;
 };
+
+
+// ----------------------------- WEIGHT MAP HELPERS ----------------------------- #
+
+/**
+ * Merge a training delta into the local weight map.
+ * existing and delta: { stateKey: [[row, col, win_rate, wins, samples], ...] }
+ */
+export const mergeWeightDelta = (existing, delta, maxActions = 8) => {
+  const merged = { ...existing };
+
+  for (const [stateKey, actions] of Object.entries(delta)) {
+    let list = merged[stateKey] ? merged[stateKey].map(a => [...a]) : [];
+
+    for (const [row, col, dWins, dSamples] of actions) {
+      const idx = list.findIndex(a => a[0] === row && a[1] === col);
+      if (idx >= 0) {
+        list[idx][3] += dWins;
+        list[idx][4] += dSamples;
+      } else {
+        list.push([row, col, 0, dWins, dSamples]);
+      }
+    }
+
+    for (const action of list) {
+      action[2] = action[4] > 0 ? action[3] / action[4] : 0.0;
+    }
+
+    list.sort((a, b) => b[2] - a[2]);
+    merged[stateKey] = list.slice(0, maxActions);
+  }
+
+  return merged;
+};

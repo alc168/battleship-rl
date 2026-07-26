@@ -6,10 +6,7 @@
   "homepage": "https://alc168.github.io/battleship-rl/",
   "scripts": {
     "dev": "vite",
-    "copy:policy": "cp ../ai_policy.json public/ai_policy.json 2>/dev/null || true",
-    "prebuild": "npm run copy:policy",
     "build": "vite build",
-    "predeploy": "npm run copy:policy",
     "preview": "vite preview",
     "deploy": "vite build && gh-pages -d dist"
   },

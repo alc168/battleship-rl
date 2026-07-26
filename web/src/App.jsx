@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { GAME_PHASES, ORIENTATIONS, SHIPS, CELL_STATES, GRID_SIZE, APP_VERSION } from './constants.js';
 import { 
   createEmptyGrid, 
@@ -14,8 +14,11 @@ import {
   seedPlacementMemory,
   selectPlacementPattern,
   applyPlacementPattern,
-  updatePlacementMemory
+  updatePlacementMemory,
+  mergeWeightDelta
 } from './utils.js';
+import { API_BASE_URL, TRAINING_MODE } from './config.js';
+import { CONFIG } from './training.config.js';
 import './index.css';
 
 function App() {
@@ -42,11 +45,20 @@ function App() {
   // Smart AI state: stores adjacent cells to try after a hit
   const [computerHuntTargets, setComputerHuntTargets] = useState([]);
 
-  // Loaded Teacher policy lookup table
-  const [aiPolicy, setAiPolicy] = useState(null);
+  // Shared weight map loaded from Cloudflare KV
+  const [weightMap, setWeightMap] = useState(null);
 
   // Memory of human ship placements; used to choose computer placements
   const [placementMemory, setPlacementMemory] = useState([]);
+
+  // Web Worker reference for background training
+  const workerRef = useRef(null);
+  const isTraining = useRef(false);
+  const weightMapRef = useRef(weightMap);
+  const placementMemoryRef = useRef(placementMemory);
+
+  useEffect(() => { weightMapRef.current = weightMap; }, [weightMap]);
+  useEffect(() => { placementMemoryRef.current = placementMemory; }, [placementMemory]);
 
   // Randomly place enemy ships and start the playing phase
   const startGame = useCallback(() => {
@@ -91,55 +103,108 @@ function App() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [gamePhase, handleRandomPlacement]);
 
-  // Load the trained Teacher policy once on mount
+  // Load the shared weight map and placement memory from the Cloudflare Worker
   useEffect(() => {
-    fetch('/ai_policy.json')
+    fetch(`${API_BASE_URL}/api/weight-map`)
       .then(response => {
-        if (!response.ok) {
-          throw new Error(`Failed to load ai_policy.json: ${response.status}`);
-        }
+        if (!response.ok) throw new Error(`Failed to load weight-map: ${response.status}`);
         return response.json();
       })
       .then(data => {
-        setAiPolicy(data);
-        console.log('Loaded ai_policy.json', Object.keys(data).length, 'states');
+        setWeightMap(data);
+        console.log('Loaded weight_map', Object.keys(data).length, 'states');
       })
       .catch(error => {
-        console.error('Could not load ai_policy.json, using fallback AI:', error);
+        console.error('Could not load weight_map, using fallback AI:', error);
+      });
+
+    fetch(`${API_BASE_URL}/api/top-layouts?n=100`)
+      .then(response => {
+        if (!response.ok) throw new Error(`Failed to load top-layouts: ${response.status}`);
+        return response.json();
+      })
+      .then(data => {
+        const formatted = data.map(r => ({
+          pattern: JSON.parse(r.layout_json),
+          wins: r.wins,
+          games: r.games,
+          score: 1 + r.wins
+        }));
+        setPlacementMemory(formatted);
+        console.log('Loaded placement memory:', formatted.length, 'patterns');
+      })
+      .catch(error => {
+        console.error('Failed to load placement memory, seeding locally:', error);
+        const seeded = seedPlacementMemory(100);
+        setPlacementMemory(seeded);
       });
   }, []);
 
-  // Load placement memory from localStorage, or seed with 100 random placements
-  useEffect(() => {
-    try {
-      const stored = localStorage.getItem('battleshipPlacementMemory');
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        setPlacementMemory(parsed);
-        console.log('Loaded placement memory:', parsed.length, 'patterns');
-      } else {
-        const seeded = seedPlacementMemory(100);
-        setPlacementMemory(seeded);
-        localStorage.setItem('battleshipPlacementMemory', JSON.stringify(seeded));
-        console.log('Seeded placement memory with', seeded.length, 'random patterns');
-      }
-    } catch (error) {
-      console.error('Failed to load placement memory:', error);
-      const seeded = seedPlacementMemory(100);
-      setPlacementMemory(seeded);
-    }
-  }, []);
-
-  // After each finished game, rerank placement memory using the human's layout
+  // After each finished game, record the human layout to D1 and trigger background training
   useEffect(() => {
     if (!winner || !playerShipPositions || playerShipPositions.length === 0) return;
     const humanWon = winner === 'player';
-    setPlacementMemory(prev => {
-      const next = updatePlacementMemory(prev, playerShipPositions, humanWon, 100);
-      localStorage.setItem('battleshipPlacementMemory', JSON.stringify(next));
-      return next;
-    });
+    const layoutJson = JSON.stringify(playerShipPositions);
+
+    // Record result asynchronously; do not block UI
+    fetch(`${API_BASE_URL}/api/record`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ layout_json: layoutJson, win: humanWon })
+    }).catch(err => console.error('Failed to record layout:', err));
+
+    // Update local placement memory immediately for the next game
+    setPlacementMemory(prev => updatePlacementMemory(prev, playerShipPositions, humanWon, 100));
+
+    // Trigger background training when appropriate
+    if (weightMapRef.current && !isTraining.current) {
+      const isMobile = /Mobi|Android/i.test(navigator.userAgent);
+      if (isMobile && !CONFIG.ENABLE_ON_MOBILE) return;
+
+      isTraining.current = true;
+      setTimeout(() => {
+        startTraining();
+      }, CONFIG.TRAINING_DELAY_MS);
+    }
   }, [winner, playerShipPositions]);
+
+  // Initialize the training Web Worker once on mount
+  useEffect(() => {
+    const worker = new Worker(new URL('./training.worker.js', import.meta.url), { type: 'module' });
+
+    worker.onmessage = (event) => {
+      const { type, delta, completed, elapsed, total } = event.data;
+
+      if (type === 'progress') {
+        console.log(`Training progress: ${completed}/${total} games`);
+        return;
+      }
+
+      if (type === 'complete') {
+        console.log(`Training complete: ${completed} games in ${elapsed?.toFixed?.(0)}ms`);
+        if (delta && Object.keys(delta).length > 0) {
+          setWeightMap(prev => mergeWeightDelta(prev || {}, delta, 8));
+          fetch(`${API_BASE_URL}/api/merge-weights`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ delta })
+          })
+            .then(response => response.json())
+            .then(data => console.log('Merged weights on server:', data))
+            .catch(err => console.error('Failed to merge weights:', err));
+        }
+        isTraining.current = false;
+      }
+    };
+
+    worker.onerror = (err) => {
+      console.error('Training worker error:', err);
+      isTraining.current = false;
+    };
+
+    workerRef.current = worker;
+    return () => worker.terminate();
+  }, []);
 
   // Route grid clicks to placement or attack handlers based on game phase
   const handleCellClick = (row, col) => {
@@ -276,7 +341,7 @@ function App() {
     } else {
       // No hunt targets: ask the trained Teacher for a move
       const boardKey = getBoardKey(computerMoves, playerShipPositions, playerSunkShips);
-      const aiMove = getAiMove(boardKey, aiPolicy, computerMoves);
+      const aiMove = getAiMove(boardKey, weightMap, computerMoves);
 
       if (aiMove) {
         row = aiMove.row;
@@ -335,6 +400,15 @@ function App() {
 
     setIsPlayerTurn(true);
   };
+
+  // Start a background self-play training batch in the Web Worker
+  function startTraining() {
+    if (!workerRef.current) return;
+    workerRef.current.postMessage({
+      weightMap: weightMapRef.current,
+      placementMemory: placementMemoryRef.current
+    });
+  }
 
   const resetGame = () => {
     setGamePhase(GAME_PHASES.PLACEMENT);

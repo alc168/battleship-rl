@@ -1,0 +1,24 @@
+# Cloudflare Worker configuration for the Battleship RL API.
+#
+# 1. Create the D1 database:
+#      wrangler d1 create battleship-rl-db
+# 2. Create the KV namespace:
+#      wrangler kv:namespace create "battleship-rl-kv"
+# 3. Copy the ids from the output into the bindings below.
+# 4. Create the table:
+#      wrangler d1 execute battleship-rl-db --file=./worker/schema.sql
+# 5. Deploy:
+#      wrangler deploy
+
+name = "battleship-rl-api"
+main = "worker/index.js"
+compatibility_date = "2025-07-01"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "battleship-rl-db"
+database_id = "<YOUR_D1_DATABASE_ID>"
+
+[[kv_namespaces]]
+binding = "KV"
+id = "<YOUR_KV_NAMESPACE_ID>"
