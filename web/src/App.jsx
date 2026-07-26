@@ -396,16 +396,23 @@ function App() {
     return () => worker.terminate();
   }, [addLog]);
 
+  // Reset the intro flag each time the game returns to ship placement
+  useEffect(() => {
+    if (gamePhase === GAME_PHASES.PLACEMENT) {
+      introPlayedRef.current = false;
+    }
+  }, [gamePhase]);
+
   // Route grid clicks to placement or attack handlers based on game phase
-  const handleCellClick = (row, col) => {
+  const handleCellClick = (row, col, isComputerGrid) => {
     if (!introPlayedRef.current) {
       playSound('battleshipsintro.mp3');
       introPlayedRef.current = true;
     }
 
-    if (gamePhase === GAME_PHASES.PLACEMENT) {
+    if (gamePhase === GAME_PHASES.PLACEMENT && !isComputerGrid) {
       handlePlacement(row, col);
-    } else if (gamePhase === GAME_PHASES.PLAYING && isPlayerTurn) {
+    } else if (gamePhase === GAME_PHASES.PLAYING && isPlayerTurn && isComputerGrid) {
       handlePlayerAttack(row, col);
     }
   };
@@ -448,8 +455,6 @@ function App() {
 
     if (hit && newSunkShips.length === computerSunkShips.length) {
       playSound('hit.mp3');
-    } else if (!hit) {
-      playSound('miss.mp3');
     }
 
     if (newSunkShips.length > computerSunkShips.length) {
@@ -631,8 +636,6 @@ function App() {
 
     if (hit && newSunkShips.length === playerSunkShips.length) {
       playSound('hit.mp3');
-    } else if (!hit) {
-      playSound('miss.mp3');
     }
 
     if (newSunkShips.length > playerSunkShips.length) {
@@ -827,7 +830,7 @@ function App() {
                 <div
                   key={`${isComputerGrid ? 'enemy' : 'player'}-${rowIndex * GRID_SIZE + colIndex}`}
                   className={getCellClass(cell, isComputerGrid, rowIndex, colIndex)}
-                  onClick={() => handleCellClick(rowIndex, colIndex)}
+                  onClick={() => handleCellClick(rowIndex, colIndex, isComputerGrid)}
                 >
                   {getCellContent(cell, isComputerGrid, rowIndex, colIndex)}
                 </div>
@@ -1043,10 +1046,10 @@ function App() {
           <span>v{APP_VERSION}</span>
           <button
             onClick={() => setSoundOn(prev => !prev)}
-            className="tactical-button px-3 py-1 rounded text-xs uppercase tracking-wider"
+            className="tactical-button px-3 py-1 rounded text-xs"
             aria-label={soundOn ? 'Turn sound off' : 'Turn sound on'}
           >
-            {soundOn ? 'Sound On' : 'Sound Off'}
+            {soundOn ? '🔊' : '🔇'}
           </button>
           <button
             onClick={() => setShowInfoPanel(prev => !prev)}
