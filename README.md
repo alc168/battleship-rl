@@ -1,4 +1,4 @@
-# Battleships RL: A University-Level Tutorial in Edge-AI Game Engineering
+# Battleships RL: A Tutorial in Edge-AI Game Engineering
 
 *Or: How to Sink Five Plastic Boats with Dignity, a Web Worker, and a Cloudflare Edge*
 
@@ -8,7 +8,7 @@ A standalone tutorial for reading the `battleships-rl` repository, understanding
 
 ## 1. Who this tutorial is for
 
-This tutorial is aimed at university students who already know the basics of JavaScript, HTML and CSS, and who now wish to see how a real project combines React, a globally distributed serverless backend, a Web Worker, and a small but determined artificial intelligence into one theatrical little game.
+This tutorial is aimed at readers who already know the basics of JavaScript, HTML and CSS, and who now wish to see how a real project combines React, a globally distributed serverless backend, a Web Worker, and a small but determined artificial intelligence into one theatrical little game.
 
 By the end you should be able to:
 
