@@ -241,6 +241,17 @@ Limits reset daily at 00:00 UTC. Exceeding any limit causes hard errors until th
 5. **Shard the weight map by state prefix** once it approaches the 25 MiB per-value limit, or move historical snapshots to R2.
 6. **Document that `EXPERIENCE_FIRST` is intended for paid plans** and enforce a runtime warning if it is used on a free account.
 
+### 6.6 Weight-map state cap (`MAX_STATES`)
+
+`worker/index.js` caps the merged `weight_map` at `MAX_STATES = 100_000` entries in `mergeWeights`. This number is a deliberate free-tier target, not a hard physical limit.
+
+- The current `ai_policy.json` / `weight_map` holds **~80,000** states and is **~9.3 MiB**.
+- At the current encoding (`[row, col, win_rate, wins, samples]`), that is roughly **0.117 kB per state**.
+- **100,000 states** therefore translates to **~11.7 MiB**, safely under the KV 25 MiB per-value hard limit.
+- The real free-tier bottleneck is not storage size but **Workers CPU time**: every `GET /api/weight-map` must `JSON.parse` the value and `JSON.stringify` it again for the response. A 9.3 MiB map already takes tens of milliseconds of CPU; increasing the cap to 150,000–200,000 would approach the 25 MiB value limit and likely exceed the **10 ms CPU budget** on the Workers Free plan.
+
+Consequently, the cap should remain at **100,000** for a free-tier deployment. The `checkerboard` fallback in `getAiMove` covers states that are not in `weight_map`, so the DQN/learnt map only needs to store the true overrides from the baseline. If more states are needed later, the mitigation is architectural, not just raising the counter: shard by state prefix, move historical snapshots to R2, or move to Workers Paid for a 30-second CPU budget.
+
 ---
 
 ## 7. Security
