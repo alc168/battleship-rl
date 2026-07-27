@@ -184,7 +184,7 @@ The learning is a lightweight **Monte Carlo reinforcement-learning** table:
 | `UPLOAD_INTERVAL_BATCHES` | 10 | 1 |
 | `MAX_ACTIONS_PER_STATE` | 20 | 20 |
 | `MIN_SAMPLES_PER_ACTION` | 3 | 3 |
-| `MAX_STATES` | 20,000 | 100,000 |
+| `MAX_STATES` | 20,000 | 200,000 |
 | `CONTINUOUS_INTERVAL_MS` | 30,000 | 2,000 |
 | `ENABLE_ON_MOBILE` | false | true |
 
@@ -222,7 +222,7 @@ Limits reset daily at 00:00 UTC. Exceeding any limit causes hard errors until th
 | One player leaves the tab open in `EXPERIENCE_FIRST` | ~2,880 uploads, ~5,760 KV writes, exceeding the free KV write quota in a few hours. |
 | 500 human games per day | 500 `POST /api/record` calls, each with a table scan; D1 row-read budget could be exhausted. |
 | 1,000 page loads per day | 1,000 `stats` and `top-layouts` calls; D1 row reads could approach 10M/day. |
-| Weight map reaches 100,000 states in `EXPERIENCE_FIRST` | KV value size could approach or exceed the 25 MiB per-value limit. |
+| Weight map reaches 200,000 states in `EXPERIENCE_FIRST` | KV value size approaches the 25 MiB per-value limit and Workers Free CPU time may be exceeded. |
 
 ### 6.4 Mitigations already in place
 
@@ -243,14 +243,14 @@ Limits reset daily at 00:00 UTC. Exceeding any limit causes hard errors until th
 
 ### 6.6 Weight-map state cap (`MAX_STATES`)
 
-`worker/index.js` caps the merged `weight_map` at `MAX_STATES = 100_000` entries in `mergeWeights`. This number is a deliberate free-tier target, not a hard physical limit.
+`worker/index.js` caps the merged `weight_map` at `MAX_STATES = 200_000` entries in `mergeWeights`.
 
 - The current `ai_policy.json` / `weight_map` holds **~80,000** states and is **~9.3 MiB**.
 - At the current encoding (`[row, col, win_rate, wins, samples]`), that is roughly **0.117 kB per state**.
-- **100,000 states** therefore translates to **~11.7 MiB**, safely under the KV 25 MiB per-value hard limit.
-- The real free-tier bottleneck is not storage size but **Workers CPU time**: every `GET /api/weight-map` must `JSON.parse` the value and `JSON.stringify` it again for the response. A 9.3 MiB map already takes tens of milliseconds of CPU; increasing the cap to 150,000–200,000 would approach the 25 MiB value limit and likely exceed the **10 ms CPU budget** on the Workers Free plan.
+- **200,000 states** therefore translates to **~23.4 MiB**, still under the KV 25 MiB per-value hard limit but using most of the available headroom.
+- The real bottleneck is **Workers CPU time**: every `GET /api/weight-map` must `JSON.parse` the value and `JSON.stringify` it again for the response. A 9.3 MiB map already takes tens of milliseconds of CPU; a 23.4 MiB map is likely to exceed the **10 ms CPU budget** on the Workers Free plan and may require **Workers Paid** or sharding for reliable performance.
 
-Consequently, the cap should remain at **100,000** for a free-tier deployment. The `checkerboard` fallback in `getAiMove` covers states that are not in `weight_map`, so the DQN/learnt map only needs to store the true overrides from the baseline. If more states are needed later, the mitigation is architectural, not just raising the counter: shard by state prefix, move historical snapshots to R2, or move to Workers Paid for a 30-second CPU budget.
+The `checkerboard` fallback in `getAiMove` covers states that are not in `weight_map`, so the DQN/learnt map only needs to store the true overrides from the baseline. If the larger cap causes CPU timeouts, the mitigation is architectural: shard by state prefix, move historical snapshots to R2, or move to Workers Paid for a 30-second CPU budget.
 
 ---
 

@@ -124,7 +124,7 @@ function validateDelta(delta) {
 }
 
 function mergeWeights(existing, delta) {
-  const MAX_STATES = 100000;
+  const MAX_STATES = 200000;
   const MAX_ACTIONS = 20;
   const MIN_SAMPLES = 3;
 
