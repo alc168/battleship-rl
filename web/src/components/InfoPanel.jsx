@@ -159,6 +159,10 @@ export function InfoPanel({
           </div>
         </div>
       </div>
+
+      <div className="text-[10px] text-cyan-400/40 text-center mt-2 pt-2 border-t border-cyan-500/10">
+        Code by Devin · Audio by ElevenLabs
+      </div>
     </div>
   );
 }

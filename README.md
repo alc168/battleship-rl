@@ -242,6 +242,12 @@ The admin harness runs tests for game utilities, the training worker, the Worker
 2. Run `npm run deploy` inside `web/` to publish to GitHub Pages.
 3. Run `npx wrangler deploy` inside `worker/` to publish the Worker.
 
+## Credits
+
+- Code and development workflow by [Devin](https://devin.ai).
+- Voice and sound effects by [ElevenLabs](https://elevenlabs.io).
+- Edge hosting, API, D1, and KV by [Cloudflare](https://www.cloudflare.com).
+
 ---
 
 ## Repository map
