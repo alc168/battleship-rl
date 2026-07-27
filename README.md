@@ -29,6 +29,7 @@ The game is a modern, self-learning take on the classic Milton Bradley board gam
 10. [Testing](#testing)
 11. [Deployment](#deployment)
 12. [Repository map](#repository-map)
+13. [University tutorial](TUTORIAL.md)
 
 ---
 
