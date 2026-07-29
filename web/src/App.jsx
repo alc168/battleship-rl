@@ -186,7 +186,8 @@ function App() {
 
 
   const consoleFeedRef = useRef(null);
-  const introPlayedRef = useRef(false);
+  const introTriggeredForGameRef = useRef(false);
+  const shouldPlayIntroRef = useRef(false);
   const pendingDeltaRef = useRef({});
   const pendingGamesRef = useRef(0);
   const batchesSinceUploadRef = useRef(0);
@@ -381,10 +382,17 @@ function App() {
 
   // Randomly place any ships not yet deployed, then start the game
   const handleRandomPlacement = useCallback(() => {
-    if (!introPlayedRef.current) {
+    if (!introTriggeredForGameRef.current) {
+      introTriggeredForGameRef.current = true;
+      const raw = sessionStorage.getItem('gameRunCount');
+      let count = raw ? parseInt(raw, 10) : 0;
+      count += 1;
+      sessionStorage.setItem('gameRunCount', String(count));
+      shouldPlayIntroRef.current = (count % 3 === 1);
+    }
+    if (shouldPlayIntroRef.current) {
       playSound('battleshipsintro.mp3');
-      introPlayedRef.current = true;
-      sessionStorage.setItem('introPlayed', 'true');
+      shouldPlayIntroRef.current = false;
     }
 
     const result = placeRemainingShipsRandomly(playerGrid, playerShipPositions, currentShipIndex);
@@ -480,19 +488,22 @@ function App() {
     setPlacementMemory(prev => updatePlacementMemory(prev, playerShipPositions, humanWon, 100));
   }, [winner, playerShipPositions, fetchStats, addLog]);
 
-  // Restore the intro flag from the session so a page refresh does not replay it
-  useEffect(() => {
-    if (sessionStorage.getItem('introPlayed') === 'true') {
-      introPlayedRef.current = true;
-    }
-  }, []);
+  // No intro restore on refresh: the per-tab game-run counter in sessionStorage
+  // is used to play the intro once every 3 games instead.
 
   // Route grid clicks to placement or attack handlers based on game phase
   const handleCellClick = (row, col, isComputerGrid) => {
-    if (!introPlayedRef.current) {
+    if (!introTriggeredForGameRef.current) {
+      introTriggeredForGameRef.current = true;
+      const raw = sessionStorage.getItem('gameRunCount');
+      let count = raw ? parseInt(raw, 10) : 0;
+      count += 1;
+      sessionStorage.setItem('gameRunCount', String(count));
+      shouldPlayIntroRef.current = (count % 3 === 1);
+    }
+    if (shouldPlayIntroRef.current) {
       playSound('battleshipsintro.mp3');
-      introPlayedRef.current = true;
-      sessionStorage.setItem('introPlayed', 'true');
+      shouldPlayIntroRef.current = false;
     }
 
     if (gamePhase === GAME_PHASES.PLACEMENT && !isComputerGrid) {
@@ -794,8 +805,8 @@ function App() {
   };
 
   const resetGame = () => {
-    introPlayedRef.current = false;
-    sessionStorage.removeItem('introPlayed');
+    introTriggeredForGameRef.current = false;
+    shouldPlayIntroRef.current = false;
     setGamePhase(GAME_PHASES.PLACEMENT);
     setPlayerGrid(createEmptyGrid());
     setComputerGrid(createEmptyGrid());
