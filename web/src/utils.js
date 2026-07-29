@@ -335,15 +335,94 @@ export const getCheckerboardMove = (boardKey) => {
   return any[0] || null;
 };
 
+function hasFourConsecutiveBlanks(boardKey) {
+  // Rows
+  for (let r = 0; r < GRID_SIZE; r++) {
+    let run = 0;
+    for (let c = 0; c < GRID_SIZE; c++) {
+      if (boardKey[r * GRID_SIZE + c] === '0') {
+        run++;
+        if (run >= 4) return true;
+      } else {
+        run = 0;
+      }
+    }
+  }
+  // Columns
+  for (let c = 0; c < GRID_SIZE; c++) {
+    let run = 0;
+    for (let r = 0; r < GRID_SIZE; r++) {
+      if (boardKey[r * GRID_SIZE + c] === '0') {
+        run++;
+        if (run >= 4) return true;
+      } else {
+        run = 0;
+      }
+    }
+  }
+  return false;
+}
+
+/**
+ * Structured random search: pick an unknown cell in the quarter with the
+ * fewest shots so far. This naturally balances five shots per quarter before
+ * starting the next round. Only used when the board still has a run of four
+ * consecutive blank cells (meaning ships of length four or five could still
+ * hide); otherwise it returns null so the caller can fall back to the
+ * checkerboard.
+ */
+export const getQuarteredMove = (boardKey, computerMoves) => {
+  if (!hasFourConsecutiveBlanks(boardKey)) return null;
+
+  const quarterRegions = [
+    { name: 'top-left', rows: [0, 4], cols: [0, 4] },
+    { name: 'top-right', rows: [0, 4], cols: [5, 9] },
+    { name: 'bottom-left', rows: [5, 9], cols: [0, 4] },
+    { name: 'bottom-right', rows: [5, 9], cols: [5, 9] }
+  ];
+
+  const shotCounts = quarterRegions.map(region => ({
+    ...region,
+    shots: 0,
+    unknowns: []
+  }));
+
+  for (const move of computerMoves) {
+    const q = quarterRegions.findIndex(region =>
+      move.row >= region.rows[0] && move.row <= region.rows[1] &&
+      move.col >= region.cols[0] && move.col <= region.cols[1]
+    );
+    if (q >= 0) shotCounts[q].shots++;
+  }
+
+  for (let r = 0; r < GRID_SIZE; r++) {
+    for (let c = 0; c < GRID_SIZE; c++) {
+      const i = r * GRID_SIZE + c;
+      if (boardKey[i] !== '0') continue;
+      const q = quarterRegions.findIndex(region =>
+        r >= region.rows[0] && r <= region.rows[1] &&
+        c >= region.cols[0] && c <= region.cols[1]
+      );
+      if (q >= 0) shotCounts[q].unknowns.push({ row: r, col: c });
+    }
+  }
+
+  // Prefer the quarter with the fewest shots; if tied, prefer one with more unknowns.
+  shotCounts.sort((a, b) => a.shots - b.shots || b.unknowns.length - a.unknowns.length);
+
+  for (const q of shotCounts) {
+    if (q.unknowns.length > 0) {
+      return q.unknowns[Math.floor(Math.random() * q.unknowns.length)];
+    }
+  }
+
+  return null;
+};
+
 /**
  * Look up the Teacher's recommended move for the current board state.
- * Falls back to the hardcoded checkerboard algorithm if no policy entry exists.
- *
- * Improvements:
- * 1. Exact match.
- * 2. empty_board for mostly-unknown states.
- * 3. Closest known state within a small Hamming distance.
- * 4. Checkerboard parity fallback.
+ * Returns null if the model has no usable recommendation so the caller
+ * can choose its own fallback (e.g. quartered random / checkerboard).
  *
  * Improvements:
  * 1. Exact match.
@@ -375,10 +454,7 @@ export const getAiMove = (boardKey, aiPolicy, computerMoves) => {
   }
 
   if (!recommendations || recommendations.length === 0) {
-    // Fall back to the hardcoded checkerboard / parity algorithm.
-    const fallback = getCheckerboardMove(boardKey);
-    if (!fallback) return null;
-    return { ...fallback, source: 'checkerboard', key: 'checkerboard' };
+    return null;
   }
 
   for (const [row, col] of recommendations) {
@@ -387,10 +463,8 @@ export const getAiMove = (boardKey, aiPolicy, computerMoves) => {
     }
   }
 
-  // All known recommendations are already attacked; use checkerboard fallback.
-  const fallback = getCheckerboardMove(boardKey);
-  if (!fallback) return null;
-  return { ...fallback, source: 'checkerboard', key: 'checkerboard' };
+  // All known recommendations are already attacked; no usable model move.
+  return null;
 };
 
 

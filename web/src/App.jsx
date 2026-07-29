@@ -19,6 +19,8 @@ import {
   checkSunkShips,
   getBoardKey,
   getAiMove,
+  getCheckerboardMove,
+  getQuarteredMove,
   seedPlacementMemory,
   selectPlacementPattern,
   applyPlacementPattern,
@@ -88,6 +90,12 @@ function getThinkingMessage(source, winRate, row, col, humor) {
       `I have not a clue, so ${sq} it is. Could be water, could be a destroyer; life is full of surprises.`,
       `Complete guesswork. If this hits, it is definitely skill and not luck.`,
       `Chaos is the only true captain. I surrender to ${sq}.`
+    ],
+    quartered: [
+      `The model is silent, but the admiral still has a chart. I shall explore the ${sq} sector in a balanced quarter.`,
+      `No learned move, so I am dividing the ocean into quarters and firing at ${sq} in the least-searched one.`,
+      `One searches a large sea in sections, like a polite queue. ${sq} is this section's candidate.`,
+      `Strategy without data becomes geometry. ${sq} it is, in the name of even coverage.`
     ],
     checkerboard: [
       `No learned override for this state. Falling back to the classic checkerboard pattern at ${sq}.`,
@@ -651,13 +659,30 @@ function App() {
           const policyRecommendations = weightMap ? weightMap[aiMove.key] : [];
           chosenRecommendation = policyRecommendations?.find(r => r[0] === row && r[1] === col) || null;
         } else {
-          let validMove = false;
-          while (!validMove) {
-            const position = getRandomPosition();
-            row = position.row;
-            col = position.col;
-            if (!computerMoves.some(move => move.row === row && move.col === col)) {
-              validMove = true;
+          // No model recommendation: use a balanced quartered random search
+          // while larger ships can still hide, then fall back to checkerboard.
+          const quartered = getQuarteredMove(boardKey, computerMoves);
+          if (quartered) {
+            row = quartered.row;
+            col = quartered.col;
+            source = 'quartered';
+          } else {
+            const checker = getCheckerboardMove(boardKey);
+            if (checker) {
+              row = checker.row;
+              col = checker.col;
+              source = 'checkerboard';
+            } else {
+              // Board is essentially full; last-resort random cell.
+              let validMove = false;
+              while (!validMove) {
+                const position = getRandomPosition();
+                row = position.row;
+                col = position.col;
+                if (!computerMoves.some(move => move.row === row && move.col === col)) {
+                  validMove = true;
+                }
+              }
             }
           }
         }
