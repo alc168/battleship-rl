@@ -6,6 +6,8 @@ import {
   checkSunkShips,
   getBoardKey,
   getAiMove,
+  getQuarteredMove,
+  getCheckerboardMove,
   applyPlacementPattern,
   getTopPlacementPatterns
 } from './utils.js';
@@ -109,6 +111,14 @@ async function buildDelta(games, weightMap, placementMemory) {
       const opponentSunkShips = checkSunkShips(opponentShips, shooterMoves);
       const boardKey = getBoardKey(shooterMoves, opponentShips, opponentSunkShips);
       let action = getAiMove(boardKey, weightMap, shooterMoves);
+
+      if (!action) {
+        action = getQuarteredMove(boardKey, shooterMoves);
+      }
+
+      if (!action) {
+        action = getCheckerboardMove(boardKey);
+      }
 
       if (!action) {
         action = getUnattackedMove(shooterMoves);
