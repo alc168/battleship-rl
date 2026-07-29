@@ -739,40 +739,42 @@ function App() {
 
     // Determine which ships are sunk before deciding whether to keep hunting
     const newSunkShips = checkSunkShips(playerShipPositions, updatedMoves);
+    const hitShipSunk = hit && newSunkShips.some(name => {
+      const ship = playerShipPositions.find(s => s.name === name);
+      return ship && ship.positions.some(pos => pos.row === row && pos.col === col);
+    });
 
-    if (hit && newSunkShips.length === playerSunkShips.length) {
+    if (hit && !hitShipSunk) {
       playSound('hit.mp3');
     }
 
-    if (newSunkShips.length > playerSunkShips.length) {
+    if (hitShipSunk) {
       playSound('sunk.mp3');
     }
     setPlayerSunkShips(newSunkShips);
 
-    // Only add new hunt targets if this hit did not finish off a ship
     if (hit) {
-      const hitShipSunk = newSunkShips.some(name => {
-        const ship = playerShipPositions.find(s => s.name === name);
-        return ship && ship.positions.some(pos => pos.row === row && pos.col === col);
-      });
-      if (!hitShipSunk) {
+      if (hitShipSunk) {
+        // Ship is fully sunk: drop out of hunt mode and revert to the normal
+        // strategy (model / quartered / checkerboard) on the next turn.
+        setComputerHuntTargets([]);
+      } else {
+        // Continue hunting the wounded ship, but strip any targets that belong
+        // to already-sunk ships.
         const newTargets = getHuntDirectionTargets(row, col);
         setComputerHuntTargets(prev => {
           const combined = [...newTargets, ...prev];
-          const filtered = combined.filter((target, index, self) =>
+          const deduped = combined.filter((target, index, self) =>
             index === self.findIndex(t => t.row === target.row && t.col === target.col) &&
             !updatedMoves.some(move => move.row === target.row && move.col === target.col)
           );
-          return filtered;
+          return deduped.filter(target => !newSunkShips.some(name => {
+            const sunkShip = playerShipPositions.find(ship => ship.name === name);
+            return sunkShip && sunkShip.positions.some(pos => pos.row === target.row && pos.col === target.col);
+          }));
         });
       }
     }
-
-    // Clear any remaining hunt targets that belong to now-sunk ships
-    setComputerHuntTargets(prev => prev.filter(target => !newSunkShips.some(name => {
-      const sunkShip = playerShipPositions.find(ship => ship.name === name);
-      return sunkShip && sunkShip.positions.some(pos => pos.row === target.row && pos.col === target.col);
-    })));
 
     if (checkWinCondition(newPlayerGrid)) {
       playSound('sunkbattleships.mp3');
