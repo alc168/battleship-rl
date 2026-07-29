@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef } from 'react';
+import { loadAudioBuffer, playBuffer } from '../audio-engine.js';
 
 /**
  * Hook to play one random voiceover clip from the public/voiceovers folder.
@@ -17,44 +18,48 @@ const VOICEOVER_FILES = [
 ];
 
 export function useVoiceovers(soundOn) {
-  const activeAudioRef = useRef(null);
+  const activeSourceRef = useRef(null);
   const baseRef = useRef(
     (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.BASE_URL) || '/'
   );
 
-  const playVoiceover = useCallback(() => {
+  const playVoiceover = useCallback(async () => {
     if (!soundOn) return;
+
     try {
       // Stop any previous voiceover before starting a new one.
-      if (activeAudioRef.current) {
-        activeAudioRef.current.pause();
-        activeAudioRef.current.currentTime = 0;
+      if (activeSourceRef.current) {
+        try {
+          activeSourceRef.current.stop();
+        } catch {
+          // Already stopped or not started.
+        }
+        activeSourceRef.current = null;
       }
 
       const filename = VOICEOVER_FILES[Math.floor(Math.random() * VOICEOVER_FILES.length)];
-      const audio = new Audio(`${baseRef.current}voiceovers/${filename}`);
-      activeAudioRef.current = audio;
-
-      audio.onended = () => {
-        if (activeAudioRef.current === audio) activeAudioRef.current = null;
-      };
-      audio.onerror = () => {
-        if (activeAudioRef.current === audio) activeAudioRef.current = null;
-      };
-      audio.play().catch(() => {
-        if (activeAudioRef.current === audio) activeAudioRef.current = null;
+      const buffer = await loadAudioBuffer(`${baseRef.current}voiceovers/${filename}`);
+      const source = playBuffer(buffer, {
+        onEnded: () => {
+          if (activeSourceRef.current === source) activeSourceRef.current = null;
+        }
       });
-    } catch {
-      // Ignore browsers/environments that do not support Audio.
+      activeSourceRef.current = source;
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.warn('Voiceover playback failed:', err);
     }
   }, [soundOn]);
 
   useEffect(() => {
     if (soundOn) return;
-    if (activeAudioRef.current) {
-      activeAudioRef.current.pause();
-      activeAudioRef.current.currentTime = 0;
-      activeAudioRef.current = null;
+    if (activeSourceRef.current) {
+      try {
+        activeSourceRef.current.stop();
+      } catch {
+        // Already stopped.
+      }
+      activeSourceRef.current = null;
     }
   }, [soundOn]);
 
