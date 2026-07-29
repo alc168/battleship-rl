@@ -15,12 +15,9 @@ import {
   processAttack, 
   checkWinCondition,
   placeRemainingShipsRandomly,
-  getRandomPosition,
   checkSunkShips,
   getBoardKey,
-  getAiMove,
-  getCheckerboardMove,
-  getQuarteredMove,
+  getHuntDirectionTargets,
   seedPlacementMemory,
   selectPlacementPattern,
   applyPlacementPattern,
@@ -28,6 +25,7 @@ import {
   updatePlacementMemory,
   mergeWeightDelta
 } from './utils.js';
+import { getEnsembleMove } from './experts.js';
 import { API_BASE_URL, API_KEY } from './config.js';
 import { CONFIG } from './training.config.js';
 import './index.css';
@@ -96,6 +94,18 @@ function getThinkingMessage(source, winRate, row, col, humor) {
       `No learned move, so I am dividing the ocean into quarters and firing at ${sq} in the least-searched one.`,
       `One searches a large sea in sections, like a polite queue. ${sq} is this section's candidate.`,
       `Strategy without data becomes geometry. ${sq} it is, in the name of even coverage.`
+    ],
+    probability: [
+      `I am summing every legal placement of the remaining ships. ${sq} sits on the highest probability.`,
+      `Not guessing — calculating. ${sq} is the densest point on the board.`,
+      `A Bayesian battleship admiral would fire at ${sq}. I have no reason to disagree.`,
+      `The remaining fleet could be in many places; ${sq} is where the most of those places overlap.`
+    ],
+    coverage: [
+      `The numbers are thin here, so I am going where few shots have landed: ${sq}.`,
+      `No strong probability, but the seas around ${sq} are comparatively unexplored.`,
+      `When the map is flat, spread the search. ${sq} is in the least-shot neighbourhood.`,
+      `Explore first, exploit later. ${sq} has room to hide a ship.`
     ],
     checkerboard: [
       `No learned override for this state. Falling back to the classic checkerboard pattern at ${sq}.`,
@@ -573,148 +583,37 @@ function App() {
     }, 500);
   };
 
-  // Return the four orthogonal neighbours of a cell, filtering out invalid bounds
-  const getAdjacentCells = (row, col) => {
-    const adjacent = [];
-    if (row > 0) adjacent.push({ row: row - 1, col });
-    if (row < GRID_SIZE - 1) adjacent.push({ row: row + 1, col });
-    if (col > 0) adjacent.push({ row, col: col - 1 });
-    if (col < GRID_SIZE - 1) adjacent.push({ row, col: col + 1 });
-    return adjacent;
-  };
 
-  // Determine whether a friendly cell belongs to a fully sunk ship (used by hunt logic)
-  const isCellOfSunkShip = (row, col) => {
-    return playerShipPositions.some(ship =>
-      playerSunkShips.includes(ship.name) &&
-      ship.positions.some(pos => pos.row === row && pos.col === col)
-    );
-  };
-
-  // Pick the next cells to target based on the direction of recent unsunk hits
-  const getHuntDirectionTargets = (row, col) => {
-    // Look at recent hits to determine ship direction
-    const recentHits = computerMoves.filter(move => move.hit && !isCellOfSunkShip(move.row, move.col));
-    if (recentHits.length < 2) return getAdjacentCells(row, col);
-    
-    const lastHit = recentHits[recentHits.length - 1];
-    const previousHit = recentHits[recentHits.length - 2];
-    
-    // If the last two hits are aligned, continue in that direction
-    if (lastHit.row === previousHit.row) {
-      // Horizontal ship
-      const leftCol = Math.min(lastHit.col, previousHit.col) - 1;
-      const rightCol = Math.max(lastHit.col, previousHit.col) + 1;
-      const targets = [];
-      if (leftCol >= 0) targets.push({ row: lastHit.row, col: leftCol });
-      if (rightCol < GRID_SIZE) targets.push({ row: lastHit.row, col: rightCol });
-      return targets.length > 0 ? targets : getAdjacentCells(row, col);
-    } else if (lastHit.col === previousHit.col) {
-      // Vertical ship
-      const topRow = Math.min(lastHit.row, previousHit.row) - 1;
-      const bottomRow = Math.max(lastHit.row, previousHit.row) + 1;
-      const targets = [];
-      if (topRow >= 0) targets.push({ row: topRow, col: lastHit.col });
-      if (bottomRow < GRID_SIZE) targets.push({ row: bottomRow, col: lastHit.col });
-      return targets.length > 0 ? targets : getAdjacentCells(row, col);
-    }
-    
-    return getAdjacentCells(row, col);
-  };
-
-  // Computer turn: hunt a known hit, otherwise use the learned weight map
+  // Computer turn: ask the ensemble of experts for the best shot.
   const handleComputerAttack = () => {
-    let row, col;
-    let source = 'random';
-    let boardKey = '';
-    let chosenRecommendation = null;
+    const boardKey = getBoardKey(computerMoves, playerShipPositions, playerSunkShips);
+    const ensemble = getEnsembleMove({
+      boardKey,
+      weightMap,
+      computerMoves,
+      playerShipPositions,
+      playerSunkShips,
+      computerHuntTargets
+    });
 
-    // Filter out invalid hunt targets (already attacked or out of bounds)
-    const validTargets = computerHuntTargets.filter(target =>
-      target.row >= 0 && target.row < GRID_SIZE &&
-      target.col >= 0 && target.col < GRID_SIZE &&
-      !computerMoves.some(move => move.row === target.row && move.col === target.col)
-    );
-
-    if (validTargets.length > 0) {
-      const target = validTargets[0];
-      row = target.row;
-      col = target.col;
-      source = 'hunt';
-      setComputerHuntTargets(validTargets.slice(1));
-    } else {
-      const recentHits = computerMoves.filter(move => move.hit && !isCellOfSunkShip(move.row, move.col));
-      let fallbackTarget = null;
-
-      if (recentHits.length > 0) {
-        const lastHit = recentHits[recentHits.length - 1];
-        const fallbackTargets = getHuntDirectionTargets(lastHit.row, lastHit.col)
-          .filter(t => !computerMoves.some(move => move.row === t.row && move.col === t.col));
-        fallbackTarget = fallbackTargets[0] || null;
-        if (fallbackTarget) {
-          row = fallbackTarget.row;
-          col = fallbackTarget.col;
-          source = 'hunt';
-          setComputerHuntTargets(fallbackTargets.slice(1));
-        }
-      }
-
-      if (!fallbackTarget) {
-        boardKey = getBoardKey(computerMoves, playerShipPositions, playerSunkShips);
-        const aiMove = getAiMove(boardKey, weightMap, computerMoves);
-
-        if (aiMove) {
-          row = aiMove.row;
-          col = aiMove.col;
-          source = aiMove.source; // 'exact', 'empty_board' or 'closest'
-          const policyRecommendations = weightMap ? weightMap[aiMove.key] : [];
-          chosenRecommendation = policyRecommendations?.find(r => r[0] === row && r[1] === col) || null;
-        } else {
-          // No model recommendation: use a balanced quartered random search
-          // while larger ships can still hide, then fall back to checkerboard.
-          const quartered = getQuarteredMove(boardKey, computerMoves);
-          if (quartered) {
-            row = quartered.row;
-            col = quartered.col;
-            source = 'quartered';
-          } else {
-            const checker = getCheckerboardMove(boardKey);
-            if (checker) {
-              row = checker.row;
-              col = checker.col;
-              source = 'checkerboard';
-            } else {
-              // Board is essentially full; last-resort random cell.
-              let validMove = false;
-              while (!validMove) {
-                const position = getRandomPosition();
-                row = position.row;
-                col = position.col;
-                if (!computerMoves.some(move => move.row === row && move.col === col)) {
-                  validMove = true;
-                }
-              }
-            }
-          }
-        }
-        setComputerHuntTargets([]);
-      }
+    if (!ensemble) {
+      // No valid move left; should only happen at game-over.
+      setIsPlayerTurn(true);
+      return;
     }
 
-    // Build a heatmap of the computer's firing priorities for the friendly board
-    const heatKey = getBoardKey(computerMoves, playerShipPositions, playerSunkShips);
-    const emptyKey = '0'.repeat(GRID_SIZE * GRID_SIZE);
-    const heatRecommendations = (weightMap && (weightMap[heatKey] || (heatKey === emptyKey && weightMap['empty_board']))) || [];
+    const { row, col, source, valueMap, winRate, topActions } = ensemble;
+
+    // Reshape the 1D ensemble value map into the 2D heat map the grid renders.
     const newHeatMap = [];
     for (let r = 0; r < GRID_SIZE; r++) {
       const heatRow = [];
       for (let c = 0; c < GRID_SIZE; c++) {
-        const attacked = computerMoves.some(m => m.row === r && m.col === c);
-        const rec = heatRecommendations.find(rec => rec[0] === r && rec[1] === c);
+        const i = r * GRID_SIZE + c;
         heatRow.push({
-          attacked,
-          value: rec ? rec[2] : 0,
-          samples: rec ? rec[4] : 0
+          attacked: boardKey[i] !== '0',
+          value: valueMap[i],
+          samples: 0
         });
       }
       newHeatMap.push(heatRow);
@@ -725,9 +624,8 @@ function App() {
       [`${row}-${col}`]: newHeatMap[row][col].value
     }));
 
-    const winRate = chosenRecommendation ? chosenRecommendation[2] : 0;
     const thinking = getThinkingMessage(source, winRate, row, col, humorLevel);
-    setComputerDecision({ row, col, boardKey: heatKey, source, winRate, reason: thinking, topActions: heatRecommendations.slice(0, 5), thinking });
+    setComputerDecision({ row, col, boardKey, source, winRate, reason: thinking, topActions, thinking });
     addLog(thinking);
     addLog(`Target: [${row},${col}]`);
 
@@ -761,7 +659,7 @@ function App() {
       } else {
         // Continue hunting the wounded ship, but strip any targets that belong
         // to already-sunk ships.
-        const newTargets = getHuntDirectionTargets(row, col);
+        const newTargets = getHuntDirectionTargets(row, col, computerMoves, playerShipPositions, playerSunkShips);
         setComputerHuntTargets(prev => {
           const combined = [...newTargets, ...prev];
           const deduped = combined.filter((target, index, self) =>

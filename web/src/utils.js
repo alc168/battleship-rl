@@ -210,6 +210,66 @@ export const checkSunkShips = (shipPositions, hits) => {
 };
 
 
+// ----------------------------- HUNT HELPERS ----------------------------- #
+
+/**
+ * Return the four orthogonal neighbours of a cell, filtering out invalid bounds.
+ */
+export const getAdjacentCells = (row, col) => {
+  const adjacent = [];
+  if (row > 0) adjacent.push({ row: row - 1, col });
+  if (row < GRID_SIZE - 1) adjacent.push({ row: row + 1, col });
+  if (col > 0) adjacent.push({ row, col: col - 1 });
+  if (col < GRID_SIZE - 1) adjacent.push({ row, col: col + 1 });
+  return adjacent;
+};
+
+/**
+ * Determine whether a friendly cell belongs to a fully sunk ship.
+ */
+export const isCellOfSunkShip = (row, col, playerShipPositions, playerSunkShips) => {
+  return playerShipPositions.some(ship =>
+    playerSunkShips.includes(ship.name) &&
+    ship.positions.some(pos => pos.row === row && pos.col === col)
+  );
+};
+
+/**
+ * Pick the next cells to target based on the direction of recent unsunk hits.
+ * Falls back to the four adjacent cells if no direction is established.
+ */
+export const getHuntDirectionTargets = (row, col, computerMoves, playerShipPositions, playerSunkShips) => {
+  const recentHits = computerMoves.filter(move =>
+    move.hit && !isCellOfSunkShip(move.row, move.col, playerShipPositions, playerSunkShips)
+  );
+
+  if (recentHits.length < 2) return getAdjacentCells(row, col);
+
+  const lastHit = recentHits[recentHits.length - 1];
+  const previousHit = recentHits[recentHits.length - 2];
+
+  if (lastHit.row === previousHit.row) {
+    const leftCol = Math.min(lastHit.col, previousHit.col) - 1;
+    const rightCol = Math.max(lastHit.col, previousHit.col) + 1;
+    const targets = [];
+    if (leftCol >= 0) targets.push({ row: lastHit.row, col: leftCol });
+    if (rightCol < GRID_SIZE) targets.push({ row: lastHit.row, col: rightCol });
+    return targets.length > 0 ? targets : getAdjacentCells(row, col);
+  }
+
+  if (lastHit.col === previousHit.col) {
+    const topRow = Math.min(lastHit.row, previousHit.row) - 1;
+    const bottomRow = Math.max(lastHit.row, previousHit.row) + 1;
+    const targets = [];
+    if (topRow >= 0) targets.push({ row: topRow, col: lastHit.col });
+    if (bottomRow < GRID_SIZE) targets.push({ row: bottomRow, col: lastHit.col });
+    return targets.length > 0 ? targets : getAdjacentCells(row, col);
+  }
+
+  return getAdjacentCells(row, col);
+};
+
+
 // ----------------------------- AI POLICY HELPERS ----------------------------- #
 
 /**
