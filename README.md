@@ -52,6 +52,8 @@ battleships-rl/
 │   ├── src/
 │   │   ├── App.jsx        # main component
 │   │   ├── utils.js       # game logic + AI helpers
+│   │   ├── experts.js     # ensemble of DQN, probability, hunt and fallback experts
+│   │   ├── audio-engine.js # shared Web Audio engine
 │   │   ├── training.worker.js
 │   │   ├── training.config.js
 │   │   ├── constants.js
@@ -101,8 +103,8 @@ A custom hook is a JavaScript function whose name starts with `use` and which ca
 
 The project has four small hooks:
 
-- `useAudio` — plays intro and sound effects, respects the sound toggle.
-- `useVoiceovers` — chooses and stops voiceover clips for the different humour levels.
+- `useAudio` — plays intro and sound effects via the shared `audio-engine.js` Web Audio engine.
+- `useVoiceovers` — chooses and stops voiceover clips for the different humour levels via the same audio engine.
 - `useTraining` — owns the Web Worker lifecycle and schedules training batches.
 - `useMobile` — detects whether the viewport is narrow, presumably because someone has a very small periscope.
 
@@ -193,32 +195,33 @@ export const getBoardKey = (computerMoves, playerShipPositions, playerSunkShips)
 
 Each character is `0` (unknown), `1` (miss), `2` (hit but not yet sunk), or `3` (sunk). This string becomes the key in the `weight_map` lookup table. A 100-character key may seem excessive for a humble board game, but then so is a full military orchestra for a commercial about plastic ships.
 
-#### 5.2.2. `getAiMove`
+#### 5.2.2. `getEnsembleMove`
 
-`getAiMove` looks up the best shot for the current board. It tries, in order:
+`getEnsembleMove` no longer relies on a single source. It asks a panel of experts for a 100-cell value map, then picks the highest-scoring unknown cell. The experts are run in priority order (hunt → DQN → probability → coverage → checkerboard), so a strong directional signal can still overrule a weak probability:
 
-1. **Exact match** in `weightMap`.
-2. **`empty_board`** policy for mostly-unknown boards.
-3. **Closest known state** within a small Hamming distance.
-4. **Checkerboard fallback** for the search phase.
+1. **Hunt** — continues along the line of an unsunk hit.
+2. **DQN** — exact, `empty_board` or closest match in the learned `weightMap`.
+3. **Probability density** — counts every valid placement of the remaining ships, respecting misses, sunk ships and the "ships do not touch" rule.
+4. **Coverage** — nudges the AI toward the least-shot 3×3 neighbourhood when no expert is confident.
+5. **Checkerboard** — parity fallback of absolute last resort.
 
 ```javascript
-export const getAiMove = (boardKey, aiPolicy, computerMoves) => {
-  if (!aiPolicy) return null;
-  let recommendations = aiPolicy[boardKey];
-  // ... empty_board and closest lookups ...
-  if (!recommendations || recommendations.length === 0) {
-    const fallback = getCheckerboardMove(boardKey);
-    if (!fallback) return null;
-    return { ...fallback, source: 'checkerboard', key: 'checkerboard' };
-  }
-  // ... pick first unattacked recommendation ...
+export const getEnsembleMove = ({ boardKey, weightMap, computerMoves,
+  playerShipPositions, playerSunkShips, computerHuntTargets }) => {
+  const experts = [
+    huntExpert(...),   // 1.0 for queued or directional hunt targets
+    dqnExpert(...),    // win-rate from the learned policy
+    probabilityExpert(...), // placement-density map
+    coverageExpert(...),    // shot-density tie-break
+    checkerboardExpert(...) // parity
+  ];
+  // ... combine value maps and pick the best unknown cell ...
 };
 ```
 
-The checkerboard fallback is a hardcoded heuristic. Because every ship is at least two cells long, every ship touches both checkerboard colours. Firing on one colour is therefore guaranteed to find every ship, so the only states that need to be learned are the exceptions where the AI has evidence that a different cell is better.
+The probability-density expert is the most interesting new arrival. It enumerates all legal placements of the remaining ships, discards any placement that overlaps a known miss or sunk cell, and rejects placements that would touch a known ship (even diagonally). The cells that appear in the most surviving placements get the highest probability. This is the same idea Nick Berry used at DataGenetics to reach ~42 median moves, but computed in the browser in a few milliseconds.
 
-> **Fortune cookie.** *When in doubt, trust the checkerboard. All ships are at least two squares long, and two squares cannot hide from both colours. It is the geometry of despair.*
+> **Fortune cookie.** *When in doubt, count every possible place the enemy could be and fire where the largest number of those places overlap. It is the geometry of probability.*
 
 #### 5.2.3. `mergeWeightDelta`
 
@@ -282,12 +285,12 @@ This pattern — encapsulating an imperative browser API inside a declarative ho
 
 ### 5.6. Audio and voiceovers
 
-`useAudio` and `useVoiceovers` are excellent examples of custom hooks that wrap browser APIs. They each:
+`useAudio` and `useVoiceovers` are thin wrappers around a single shared Web Audio engine in `audio-engine.js`. They each:
 
-- Create an `Audio` object.
-- Provide play/stop functions.
-- Respect the `soundOn` state.
-- Clean up on unmount.
+- Load and decode MP3s through a shared `AudioContext`.
+- Schedule `AudioBufferSourceNode`s for instant, non-blocking playback.
+- Respect the `soundOn` state and stop active sources when it is turned off.
+- Resume the `AudioContext` on the first user interaction so that sounds scheduled from `setTimeout` callbacks (such as the computer's voiceovers) are not blocked by browser autoplay rules.
 
 `useVoiceovers` additionally chooses a random clip per personality and tracks scheduling, keeping the voiceover logic out of the main game loop. This prevents the computer from delivering a stirring monologue while the player is trying to aim.
 
@@ -381,9 +384,11 @@ A neural network would need a runtime such as ONNX.js or TensorFlow.js, and it w
 
 Deep learning may win at chess, but Battleship can often be resolved with a sufficiently large notebook and a trust in statistics.
 
-### 7.6. Why the checkerboard fallback?
+### 7.6. Why an ensemble of experts?
 
-The checkerboard fallback hardcodes a provably sound search strategy. It removes the need to store thousands of obvious states in the policy file. Only states where the learned move is better than the parity heuristic need to be retained. It is the fallback of a player who has read the rules and decided that two squares long is quite enough to justify a system.
+No single strategy is best for every Battleship situation. A learned DQN may know the perfect opening, but it has nothing useful to say about a sparse board in the endgame. A probability-density map is mathematically sound, but it is slow to react to the precise geometry of an unsunk hit. Hunt logic is excellent at finishing a wounded ship, but useless for finding a new one.
+
+The ensemble lets each expert vote only when it has something useful to say. The DQN covers the states it has memorised; the probability expert covers the states it has not; the hunt expert takes over the moment a ship is hit; the checkerboard expert is the final, always-safe tie-breaker. It is a small, clean implementation of the classic idea that the right model for the job is better than a single overfitted model.
 
 ### 7.7. Why personality and voiceovers?
 
@@ -400,7 +405,9 @@ The project is inspired by a theatrical 1975 Milton Bradley commercial. The comp
 | **CORS allow-list** | `isAllowedOrigin` checks against `ALLOWED_ORIGINS`. |
 | **Rate limiting** | D1-backed `rate_limits` table. |
 | **Input validation** | `validateLayout`, `validateDelta`, `MAX_DELTA_*` bounds. |
-| **Custom hooks for side effects** | `useAudio`, `useVoiceovers`, `useTraining`. |
+| **Shared audio context for autoplay compliance** | `audio-engine.js` decodes buffers and resumes a single `AudioContext` on the first user gesture. |
+| **Hybrid learning and model-based reasoning** | `experts.js` combines the DQN with a probability-density expert, hunt logic and fallbacks. |
+| **Custom hooks for side effects** | `useAudio`, `useVoiceovers`, `useTraining`.
 | **Off-main-thread work** | `training.worker.js` runs self-play in a Web Worker. |
 | **Immutability** | `utils.js` returns new grids instead of mutating old ones. |
 | **Pure helper functions** | Game logic is separated from React state in `utils.js`. |
@@ -467,8 +474,8 @@ The frontend and Worker are deployed independently. The frontend points to the W
 5. **Data augmentation.** The worker generates seven symmetric variants of each board state. Why does this effectively multiply data by eight rather than seven?
 6. **Cost engineering.** Look at `training.config.js`. What is the difference between `COST_FIRST` and `EXPERIENCE_FIRST`?
 7. **Lookup vs. neural.** What are three reasons the authors chose a tabular policy over a neural network for the browser?
-8. **Checkerboard correctness.** Explain why a checkerboard search is guaranteed to find every ship on a 10×10 board with ships of length 2 or more.
-9. **Git navigation.** If you want to understand why the `getAiMove` function has a checkerboard fallback, which documentation files should you read? Which commit messages?
+8. **Expert priorities.** Explain why the hunt expert is placed ahead of the DQN and probability experts in the ensemble, and why the probability expert is ahead of the coverage and checkerboard experts.
+9. **Git navigation.** If you want to understand why the `getEnsembleMove` function combines a learned DQN with a probability-density expert, which documentation files should you read? Which commit messages?
 10. **Extending the project.** Add a "Fast Learner" training preset that trades even more cost for faster updates. What constants would you change in `training.config.js`, and what risks would that introduce?
 
 ---

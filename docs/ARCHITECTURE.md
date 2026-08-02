@@ -54,6 +54,8 @@ The recommended and deployed architecture is a hybrid: a static React frontend h
 
 - Renders the two 10x10 grids, handles placement and attack clicks, and enforces game rules.
 - Loads the current `weight_map` and `top_layouts` once on page open.
+- Chooses computer shots through `web/src/experts.js`, an ensemble of DQN, probability-density, hunt, coverage and checkerboard experts.
+- Plays audio through the shared `web/src/audio-engine.js` to avoid autoplay blocking.
 - Spawns a Web Worker that trains continuously while the game is active.
 - POSTs finished human games and training deltas to the Worker.
 - Displays the Computer Tactical Console, which includes the computer's "thinking", a firing probability heatmap, combat statistics, and a humour dial.
@@ -160,12 +162,13 @@ The learning is a lightweight **Monte Carlo reinforcement-learning** table:
 - For each state, actions are ranked by `wins / samples`.
 - The top `MAX_ACTIONS_PER_STATE` actions are kept in KV.
 
-`getAiMove` tries, in order:
+`getEnsembleMove` (in `web/src/experts.js`) consults a panel of experts that each produce a 100-cell value map. Experts are applied in priority order, and a higher-priority expert can still outvote lower-priority ones for the cells it considers important:
 
-1. An exact match in `weight_map`.
-2. The `empty_board` policy for boards with four or fewer known cells.
-3. The closest known state within a Hamming distance of 6.
-4. Hunt logic around unsunk hits, then random fire.
+1. **Hunt** — continues along the line of unsunk hits; highest priority when a ship is wounded.
+2. **DQN** — exact match in `weight_map`, then `empty_board` for mostly-unknown boards, then the closest known state within a Hamming distance of 6.
+3. **Probability density** — counts legal placements of every remaining ship, weighted by the probability the ship is still alive, to produce a heatmap of likely enemy locations.
+4. **Coverage** — favours the least-shot 3×3 neighbourhood when no higher expert is confident.
+5. **Checkerboard** — a parity fallback that is guaranteed to find every ship because no ship is shorter than two cells.
 
 ### 5.2 Placement policy
 
@@ -250,7 +253,7 @@ Limits reset daily at 00:00 UTC. Exceeding any limit causes hard errors until th
 - **200,000 states** therefore translates to **~23.4 MiB**, still under the KV 25 MiB per-value hard limit but using most of the available headroom.
 - The real bottleneck is **Workers CPU time**: every `GET /api/weight-map` must `JSON.parse` the value and `JSON.stringify` it again for the response. A 9.3 MiB map already takes tens of milliseconds of CPU; a 23.4 MiB map is likely to exceed the **10 ms CPU budget** on the Workers Free plan and may require **Workers Paid** or sharding for reliable performance.
 
-The `checkerboard` fallback in `getAiMove` covers states that are not in `weight_map`, so the DQN/learnt map only needs to store the true overrides from the baseline. If the larger cap causes CPU timeouts, the mitigation is architectural: shard by state prefix, move historical snapshots to R2, or move to Workers Paid for a 30-second CPU budget.
+The probability-density, coverage and checkerboard experts in `getEnsembleMove` cover states that are not in `weight_map`, so the DQN/learnt map only needs to store the true overrides from the baseline. If the larger cap causes CPU timeouts, the mitigation is architectural: shard by state prefix, move historical snapshots to R2, or move to Workers Paid for a 30-second CPU budget.
 
 ---
 

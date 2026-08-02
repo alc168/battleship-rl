@@ -48,8 +48,8 @@ The project is designed around four priorities, in order:
 
 - A human places five ships on a 10x10 grid and then takes turns firing at the computer's hidden fleet.
 - The computer places its own ships by copying high-performing human layouts it has seen before.
-- The computer chooses shots using a learned "weight map" that maps board states to the coordinates most likely to lead to victory.
-- If the weight map has no entry for a state, the computer falls back to hunt logic around known hits and then random fire.
+- The computer chooses shots using an ensemble of experts: a learned DQN weight map, a probability-density model of the remaining ships, hunt logic around unsunk hits, a coverage tie-break, and a checkerboard parity fallback.
+- The experts are consulted in priority order, so a strong directional hunt signal can still overrule a weak probability or learned recommendation.
 - While the game runs, a Web Worker plays batches of self-play games, producing win-rate deltas that are merged into the global weight map.
 - Every finished human game is recorded in D1, so the computer can learn which ship placements win.
 - A Computer Tactical Console shows live training logs, the computer's current thinking, a firing probability heatmap, combat statistics, and a humour dial.
@@ -99,6 +99,8 @@ For the full design, data model, API surface, and cost analysis, see [docs/ARCHI
 
 - Renders the two grids, handles placement and attack clicks, and enforces game rules.
 - Loads the current weight map and top human layouts when the page opens.
+- Combines DQN, probability-density, hunt, coverage and checkerboard experts in `web/src/experts.js` to choose shots.
+- Plays intro and voiceover audio through the shared `web/src/audio-engine.js` to avoid autoplay restrictions.
 - Spawns a Web Worker that trains continuously while the game is active.
 - POSTs finished human games and training deltas to the Worker.
 - Displays the Computer Tactical Console by default.

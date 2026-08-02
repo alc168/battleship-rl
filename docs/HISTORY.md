@@ -152,7 +152,39 @@ The system became production-safe for a hobby audience. `EXPERIENCE_FIRST` was k
 
 ---
 
-## 7. Summary of key decisions
+## 7. Phase 7 — Expert ensemble and Web Audio (2026-08)
+
+### What changed
+
+- `web/src/experts.js` was created to combine five move-selection strategies:
+  - **Hunt** — follows unsunk hits and continues along their axis.
+  - **DQN** — exact match, `empty_board` and closest-known-state lookups from the learned `weight_map`.
+  - **Probability density** — counts every legal placement of the remaining ships, weighted by the probability each ship is still alive.
+  - **Coverage** — nudges the AI toward the least-shot 3×3 neighbourhood.
+  - **Checkerboard** — a parity fallback of last resort.
+- `getEnsembleMove` replaced `getAiMove`; the ensemble is consulted in priority order so a strong local signal can still dominate a weaker global one.
+- `getAdjacentCells`, `isCellOfSunkShip` and `getHuntDirectionTargets` were moved from `App.jsx` into `utils.js` for reuse.
+- `web/src/audio-engine.js` was added to manage all sound playback through a shared `AudioContext`, fixing autoplay blocking for the intro and voiceovers when triggered from `setTimeout`.
+- The intro music was throttled to play on the 1st, 4th, 7th, etc. game run per tab to avoid wearing out the welcome.
+- `handleComputerAttack` now clears `computerHuntTargets` as soon as a ship sinks, preventing wasted shots at an already-destroyed ship.
+- `APP_VERSION` was bumped to `1.02`.
+
+### Decisions and trade-offs
+
+| Driver | Decision |
+|---|---|
+| Usability | The ensemble still makes instant moves but behaves more like a skilled human: it finishes wounded ships, trusts probability, and falls back to a sound parity search. |
+| Cost | Probability and coverage experts run entirely in the browser; no extra backend calls. |
+| Elegance | Each expert is a small, testable function; `getEnsembleMove` is a single orchestrator. |
+| Fun | The tactical console now explains which expert (hunt, DQN, probability, coverage or checkerboard) chose the move, adding another layer of theatre. |
+
+### Outcome
+
+Random or wasteful shots became far rarer. The audio autoplay issues disappeared. The AI became more transparent, and the project gained a clean, extensible expert system that can accept new strategies without rewriting `App.jsx`.
+
+---
+
+## 8. Summary of key decisions
 
 | Decision | Why it was made | Trade-off |
 |---|---|---|
@@ -162,7 +194,8 @@ The system became production-safe for a hobby audience. `EXPERIENCE_FIRST` was k
 | Cloudflare KV for weight map | Fast global reads for a JSON lookup table. | 25 MiB per-value limit and 1,000 writes/day. |
 | In-browser Web Worker training | Uses free client CPU; keeps UI responsive. | Training data is only shared when uploaded. |
 | Symmetry augmentation | 8x data multiplier without extra games. | Slightly larger upload payloads. |
-| Nearest-state and empty-board fallbacks | Reduce random shots and make the AI feel smarter. | Slightly more CPU per move; more KV data to download. |
+| Nearest-state and empty-board fallbacks | Reduce random shots and make the AI feel smarter. | Slightly more KV data to download; later superseded by the expert ensemble. |
+| Expert ensemble (DQN + probability + hunt + coverage + checkerboard) | Combine the best of learned and model-based reasoning. | More client-side CPU; gains may plateau on small sample sizes. |
 | Tactical console with personality | Explain the AI and add fun. | Larger UI; open by default on mobile uses more screen. |
 | `COST_FIRST` throttling | Stay inside free tiers. | Slower global model improvement. |
 | Shared API key in the client bundle | Simplest possible auth for an unauthenticated public game. | Key can be extracted from the bundle; rotation is manual. |

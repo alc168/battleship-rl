@@ -312,3 +312,30 @@ A concise record of the major bugs, errors, and usability issues encountered acr
 | v1.1.5 | 2026-07-25 21:42:23 | Keyboard shortcuts for placement |
 | v1.1.6 | 2026-07-25 21:48:48 | Reveal unhit enemy ships on defeat |
 | v1.1.7 | 2026-07-25 22:08:33 | Mobile responsive layout and random button |
+| v1.02  | 2026-08-02 | Expert ensemble, probability-density AI, shared audio engine, hunt fixes |
+
+## Web app — ensemble and audio
+
+### 2026-08-02 — `topActions` displayed `NaN%` in the tactical console
+
+| Field | Description |
+|---|---|
+| **Situation** | The tactical console "Top Recommendations" showed `NaN%` after the AI move selection was refactored into `experts.js`. |
+| **Bug** | `InfoPanel.jsx` expected the old tuple format `[row, col, win_rate, ...]` and tried to format `recommendation[2]` as a percentage, but `experts.js` now returns objects such as `{ row, col, source, value }`. |
+| **Resolution** | Updated `InfoPanel.jsx` to read `rec.value` (already 0–1) and `rec.source`, and to format the percentage with `Math.round(value * 100)`. |
+
+### 2026-08-02 — Intro and voiceovers blocked by browser autoplay policy
+
+| Field | Description |
+|---|---|
+| **Situation** | The Milton Bradley-style intro and voiced computer quips sometimes did not play when triggered from `setTimeout` or after a short delay. |
+| **Bug** | HTML5 `<audio>` elements started by `new Audio()` are blocked by most browsers unless the user has already interacted with the page; scheduling them from a timeout does not count as a user gesture. |
+| **Resolution** | Introduced `web/src/audio-engine.js` to decode all MP3s into `AudioBuffer`s through a shared `AudioContext`. The `AudioContext` is resumed on the first user click, and playback uses short-lived `AudioBufferSourceNode`s, so `setTimeout`-scheduled clips now play reliably. |
+
+### 2026-08-02 — Computer kept firing at cells of a sunk ship
+
+| Field | Description |
+|---|---|
+| **Situation** | The tactical console sometimes showed the computer firing at cells that had already become part of a destroyed ship. |
+| **Bug** | `computerHuntTargets` was not cleared after a ship sank, so `handleComputerAttack` continued to pursue adjacent cells of the wreck. |
+| **Resolution** | Added `isCellOfSunkShip` checks in `getHuntDirectionTargets` and reset `computerHuntTargets` as soon as `checkSunkShips` reports a new sunk ship. |
