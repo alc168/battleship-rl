@@ -138,7 +138,7 @@ export function InfoPanel({
               <div className="info-section-title">Top Recommendations</div>
               {topActions.map((action, i) => (
                 <div key={`rec-${i}`} className="text-[10px] font-mono text-cyan-200/80">
-                  #{i + 1}: [{action[0]},{action[1]}] win {(action[2] * 100).toFixed(1)}% (n={action[4]})
+                  #{i + 1}: [{action.row},{action.col}] score {(action.value * 100).toFixed(1)}% (n={action.samples ?? 0})
                 </div>
               ))}
             </div>
